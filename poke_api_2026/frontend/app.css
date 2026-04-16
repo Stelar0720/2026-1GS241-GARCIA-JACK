@@ -1,0 +1,23 @@
+.container {
+  text-align: center;
+  padding: 2rem;
+  font-family: Arial;
+}
+
+input {
+  padding: 10px;
+  margin: 10px;
+}
+
+button {
+  padding: 10px 15px;
+  cursor: pointer;
+}
+
+.card {
+  margin-top: 20px;
+}
+
+img {
+  width: 120px;
+}
