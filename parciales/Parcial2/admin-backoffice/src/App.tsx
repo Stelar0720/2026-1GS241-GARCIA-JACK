@@ -12,15 +12,9 @@ type Order = {
   productId: string;
   buyerId: string;
   status: "pending" | "paid" | "cancelled";
+  quantity: number;
   amountUsd: number;
   createdAt: string;
-  updatedAt: string;
-};
-
-type InventoryItem = {
-  sku: string;
-  stock: number;
-  minimumStock: number;
   updatedAt: string;
 };
 
@@ -32,6 +26,8 @@ type Product = {
   tag: string;
   imageUrl: string;
   active: number;
+  stock: number;
+  inventoryUpdatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -42,6 +38,7 @@ type ProductFormData = {
   priceUsd: string;
   tag: string;
   imageUrl: string;
+  stock: string;
 };
 
 // ============================================
@@ -61,13 +58,12 @@ const ORDER_STATUS_LABELS: Record<Order["status"], string> = {
 
 function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   const apiBaseUrl = useMemo(() => import.meta.env.VITE_API_URL ?? "http://localhost:4000", []);
+  const storefrontUrl = useMemo(() => import.meta.env.VITE_STOREFRONT_URL ?? "http://localhost:3000", []);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingOrder, setSavingOrder] = useState<string | null>(null);
-  const [savingSku, setSavingSku] = useState<string | null>(null);
   const [savingProduct, setSavingProduct] = useState<string | null>(null);
   const [uploadingProductImage, setUploadingProductImage] = useState(false);
 
@@ -80,28 +76,26 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
     priceUsd: "",
     tag: "",
     imageUrl: "",
+    stock: "0",
   });
 
   const loadData = useCallback(async function loadData() {
     setLoading(true);
     setError(null);
     try {
-      const [ordersResponse, inventoryResponse, productsResponse] = await Promise.all([
+      const [ordersResponse, productsResponse] = await Promise.all([
         fetch(`${apiBaseUrl}/orders`),
-        fetch(`${apiBaseUrl}/inventory`),
         fetch(`${apiBaseUrl}/products?includeInactive=true`),
       ]);
 
-      if (!ordersResponse.ok || !inventoryResponse.ok || !productsResponse.ok) {
+      if (!ordersResponse.ok || !productsResponse.ok) {
         throw new Error("No se pudo cargar la información del backoffice.");
       }
 
       const ordersBody = (await ordersResponse.json()) as { data: Order[] };
-      const inventoryBody = (await inventoryResponse.json()) as { data: InventoryItem[] };
       const productsBody = (await productsResponse.json()) as { data: Product[] };
 
       setOrders(ordersBody.data);
-      setInventory(inventoryBody.data);
       setProducts(productsBody.data);
     } catch (fetchError) {
       const message =
@@ -150,39 +144,19 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   }
 
   // ============================================
-  // INVENTORY HANDLERS
-  // ============================================
-
-  async function updateInventoryStock(sku: string, stock: number, minimumStock: number) {
-    setSavingSku(sku);
-    try {
-      const response = await fetch(`${apiBaseUrl}/inventory/${encodeURIComponent(sku)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stock, minimumStock }),
-      });
-
-      if (!response.ok) {
-        throw new Error("No se pudo actualizar el inventario.");
-      }
-
-      await loadData();
-    } catch (updateError) {
-      const message =
-        updateError instanceof Error ? updateError.message : "Error al actualizar inventario.";
-      setError(message);
-    } finally {
-      setSavingSku(null);
-    }
-  }
-
-  // ============================================
   // PRODUCT HANDLERS
   // ============================================
 
   function openNewProductForm() {
     setEditingProduct(null);
-    setProductFormData({ name: "", description: "", priceUsd: "", tag: "", imageUrl: "" });
+    setProductFormData({
+      name: "",
+      description: "",
+      priceUsd: "",
+      tag: "",
+      imageUrl: "",
+      stock: "0",
+    });
     setShowProductForm(true);
   }
 
@@ -194,6 +168,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       priceUsd: product.priceUsd.toString(),
       tag: product.tag,
       imageUrl: product.imageUrl,
+      stock: product.stock.toString(),
     });
     setShowProductForm(true);
   }
@@ -201,13 +176,26 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   function closeProductForm() {
     setShowProductForm(false);
     setEditingProduct(null);
-    setProductFormData({ name: "", description: "", priceUsd: "", tag: "", imageUrl: "" });
+    setProductFormData({
+      name: "",
+      description: "",
+      priceUsd: "",
+      tag: "",
+      imageUrl: "",
+      stock: "0",
+    });
   }
 
   async function handleSaveProduct() {
     const price = parseFloat(productFormData.priceUsd);
+    const stock = Number(productFormData.stock);
     if (isNaN(price) || price <= 0) {
       setError("El precio debe ser un número positivo.");
+      return;
+    }
+
+    if (!Number.isInteger(stock) || stock < 0) {
+      setError("El stock debe ser un número entero positivo.");
       return;
     }
 
@@ -244,6 +232,21 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       if (!response.ok) {
         const errorData = (await response.json()) as { error?: string };
         throw new Error(errorData.error ?? "No se pudo guardar el producto.");
+      }
+
+      const savedProductBody = (await response.json()) as { data?: Product };
+      const savedProductId = savedProductBody.data?.id ?? editingProduct?.id;
+      if (savedProductId) {
+        const inventoryResponse = await fetch(`${apiBaseUrl}/inventory/${encodeURIComponent(savedProductId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stock }),
+        });
+
+        if (!inventoryResponse.ok) {
+          const errorData = (await inventoryResponse.json()) as { error?: string };
+          throw new Error(errorData.error ?? "El producto se guardó, pero no se pudo actualizar el stock.");
+        }
       }
 
       closeProductForm();
@@ -328,6 +331,9 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
           <p>Gestión de órdenes, inventario y productos.</p>
         </div>
         <div className="topbar-actions">
+          <a className="button button-outline" href={storefrontUrl}>
+            Ver tienda
+          </a>
           <button type="button" className="button button-outline" onClick={() => void loadData()}>
             Recargar
           </button>
@@ -396,6 +402,9 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                     <div className="product-info">
                       <h3>{product.name}</h3>
                       <p className="product-price">${product.priceUsd.toFixed(2)} USD</p>
+                      <p className="product-stock">
+                        Stock: <strong>{product.stock}</strong>
+                      </p>
                       <p className="product-description">{product.description}</p>
                       <div className="product-tags">
                         {product.tag && <span className="pill">{product.tag}</span>}
@@ -432,11 +441,12 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
           {/* ============================================ */}
           <section className="panel">
             <h2>Órdenes</h2>
-            <div className="table">
+            <div className="table orders-table">
               <div className="table-row table-head">
                 <span>ID</span>
                 <span>Producto</span>
                 <span>Comprador</span>
+                <span>Cantidad</span>
                 <span>Monto</span>
                 <span>Estado</span>
               </div>
@@ -448,6 +458,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                     <span className="order-id">{order.id.substring(0, 8)}...</span>
                     <span>{order.productId}</span>
                     <span className="buyer-id">{order.buyerId}</span>
+                    <span>{order.quantity}</span>
                     <span className="amount">${order.amountUsd.toFixed(2)}</span>
                     <span>
                       <select
@@ -470,34 +481,6 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
             </div>
           </section>
 
-          {/* ============================================ */}
-          {/* INVENTORY SECTION */}
-          {/* ============================================ */}
-          <section className="panel">
-            <h2>Inventario</h2>
-            <div className="table">
-              <div className="table-row table-head">
-                <span>SKU</span>
-                <span>Stock</span>
-                <span>Mínimo</span>
-                <span>Acción</span>
-              </div>
-              {inventory.length === 0 ? (
-                <p className="empty">No hay ítems de inventario registrados.</p>
-              ) : (
-                inventory.map((item) => (
-                  <InventoryRow
-                    key={`${item.sku}-${item.stock}-${item.minimumStock}`}
-                    item={item}
-                    saving={savingSku === item.sku}
-                    onSave={(stock, minimumStock) =>
-                      void updateInventoryStock(item.sku, stock, minimumStock)
-                    }
-                  />
-                ))
-              )}
-            </div>
-          </section>
         </>
       ) : null}
 
@@ -535,7 +518,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
               />
             </div>
 
-            <div className="form-row">
+            <div className="form-group">
               <div className="form-group">
                 <label htmlFor="product-price">Precio (USD) *</label>
                 <input
@@ -561,6 +544,22 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                     setProductFormData({ ...productFormData, tag: e.target.value })
                   }
                   placeholder="Ej.: Más vendido, premium"
+                />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="product-stock">Stock disponible</label>
+                <input
+                  id="product-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={productFormData.stock}
+                  onChange={(e) =>
+                    setProductFormData({ ...productFormData, stock: e.target.value })
+                  }
                 />
               </div>
             </div>
@@ -627,57 +626,6 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
         </div>
       ) : null}
     </main>
-  );
-}
-
-// ============================================
-// INVENTORY ROW COMPONENT
-// ============================================
-
-function InventoryRow({
-  item,
-  saving,
-  onSave,
-}: {
-  item: InventoryItem;
-  saving: boolean;
-  onSave: (stock: number, minimumStock: number) => void;
-}) {
-  const [stock, setStock] = useState(item.stock);
-  const [minimumStock, setMinimumStock] = useState(item.minimumStock);
-
-  const lowStock = stock <= minimumStock;
-
-  return (
-    <div className="table-row">
-      <span className="sku">{item.sku}</span>
-      <span>
-        <input
-          type="number"
-          value={stock}
-          min={0}
-          onChange={(event) => setStock(Number(event.target.value))}
-        />
-      </span>
-      <span>
-        <input
-          type="number"
-          value={minimumStock}
-          min={0}
-          onChange={(event) => setMinimumStock(Number(event.target.value))}
-        />
-      </span>
-      <span className="inventory-actions">
-        <button
-          className="button button-primary"
-          disabled={saving}
-          onClick={() => onSave(stock, minimumStock)}
-        >
-          {saving ? "..." : "Guardar"}
-        </button>
-        {lowStock ? <small className="low-stock">Stock bajo</small> : null}
-      </span>
-    </div>
   );
 }
 

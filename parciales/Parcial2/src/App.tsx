@@ -1,7 +1,6 @@
 import { SignIn, SignInButton, SignUp, UserButton, useUser } from "@clerk/clerk-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { CheckoutButton } from "@/components/checkout-button";
 import { fetchProductsFromApi, fallbackProducts, Product } from "@/lib/catalog";
 import { getAdminAppUrl, getApiUrl, isClerkConfigured } from "@/lib/env";
 import { getUserRole } from "@/lib/roles";
@@ -16,12 +15,39 @@ type CustomerPurchase = {
   buyerId: string;
   buyerEmail?: string | null;
   status: PurchaseStatus;
+  quantity: number;
   amountUsd: number;
   createdAt: string;
   updatedAt: string;
   productName?: string | null;
   productDescription?: string | null;
   productImageUrl?: string | null;
+};
+
+type CartItem = {
+  productId: string;
+  quantity: number;
+};
+
+type CartLine = {
+  product: Product;
+  quantity: number;
+};
+
+type StorefrontCart = {
+  products: Product[];
+  loadingProducts: boolean;
+  cartLines: CartLine[];
+  cartCount: number;
+  cartTotal: number;
+  checkoutError: string | null;
+  checkingOut: boolean;
+  lastAddedProductId: string | null;
+  openCartSignal: number;
+  addToCart: (product: Product) => void;
+  viewCart: () => void;
+  updateCartQuantity: (productId: string, quantity: number) => void;
+  checkoutCart: () => Promise<void>;
 };
 
 const purchaseStatusLabels: Record<PurchaseStatus, string> = {
@@ -50,7 +76,6 @@ function useThemeMode() {
 
 function getStockLabel(product: Product) {
   if (product.stock <= 0) return "Sin stock";
-  if (product.stock <= product.minimumStock) return `Quedan ${product.stock}`;
   return `${product.stock} disponibles`;
 }
 
@@ -105,7 +130,246 @@ async function fetchCustomerPurchases(userId: string, userEmail?: string | null)
   return body?.data ?? [];
 }
 
-function RootLayout({ children }: { children: React.ReactNode }) {
+async function createCheckoutSession(params: {
+  items: CartItem[];
+  userId: string | null;
+  userEmail: string | null;
+}) {
+  const response = await fetch("/api/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+
+  const rawBody = await response.text();
+  let parsedBody: { error?: string; checkoutUrl?: string } | null = null;
+
+  try {
+    parsedBody = JSON.parse(rawBody) as { error?: string; checkoutUrl?: string };
+  } catch {
+    parsedBody = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(parsedBody?.error ?? "No se pudo iniciar el checkout.");
+  }
+
+  if (!parsedBody?.checkoutUrl) {
+    throw new Error("Stripe no devolvió una URL de checkout válida.");
+  }
+
+  window.location.href = parsedBody.checkoutUrl;
+}
+
+function useStorefrontCart(userId: string | null, userEmail: string | null): StorefrontCart {
+  const [products, setProducts] = useState<Product[]>(fallbackProducts);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [lastAddedProductId, setLastAddedProductId] = useState<string | null>(null);
+  const [openCartSignal, setOpenCartSignal] = useState(0);
+
+  async function loadProducts({ showLoading = true }: { showLoading?: boolean } = {}) {
+    if (showLoading) setLoadingProducts(true);
+    try {
+      const fetchedProducts = await fetchProductsFromApi();
+      setProducts(fetchedProducts);
+    } catch (error) {
+      console.warn("Failed to load products, using fallback:", error);
+      setProducts(fallbackProducts);
+    } finally {
+      if (showLoading) setLoadingProducts(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadProducts();
+
+    function refreshOnFocus() {
+      void loadProducts({ showLoading: false });
+    }
+
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnFocus);
+    };
+  }, []);
+
+  const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
+  const cartLines = cartItems
+    .map((item) => {
+      const product = productsById.get(item.productId);
+      return product ? { product, quantity: item.quantity } : null;
+    })
+    .filter((line): line is CartLine => Boolean(line));
+  const cartCount = cartLines.reduce((sum, line) => sum + line.quantity, 0);
+  const cartTotal = cartLines.reduce((sum, line) => sum + line.product.priceUsd * line.quantity, 0);
+
+  function addToCart(product: Product) {
+    setCheckoutError(null);
+    setLastAddedProductId(product.id);
+    setOpenCartSignal((current) => current + 1);
+    setCartItems((current) => {
+      const existing = current.find((item) => item.productId === product.id);
+      if (!existing) return [...current, { productId: product.id, quantity: 1 }];
+
+      return current.map((item) =>
+        item.productId === product.id
+          ? { ...item, quantity: Math.min(item.quantity + 1, product.stock) }
+          : item,
+      );
+    });
+  }
+
+  function viewCart() {
+    setOpenCartSignal((current) => current + 1);
+  }
+
+  function updateCartQuantity(productId: string, quantity: number) {
+    const product = productsById.get(productId);
+    const safeQuantity = Math.max(0, Math.min(Math.floor(quantity), product?.stock ?? 0));
+    setCartItems((current) =>
+      safeQuantity === 0
+        ? current.filter((item) => item.productId !== productId)
+        : current.map((item) => (item.productId === productId ? { ...item, quantity: safeQuantity } : item)),
+    );
+  }
+
+  async function checkoutCart() {
+    setCheckoutError(null);
+    setCheckingOut(true);
+    try {
+      await createCheckoutSession({
+        items: cartItems,
+        userId,
+        userEmail,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error inesperado en el checkout.";
+      setCheckoutError(message);
+    } finally {
+      setCheckingOut(false);
+    }
+  }
+
+  return {
+    products,
+    loadingProducts,
+    cartLines,
+    cartCount,
+    cartTotal,
+    checkoutError,
+    checkingOut,
+    lastAddedProductId,
+    openCartSignal,
+    addToCart,
+    viewCart,
+    updateCartQuantity,
+    checkoutCart,
+  };
+}
+
+function CartDropdown({
+  cartLines,
+  cartCount,
+  cartTotal,
+  checkoutError,
+  checkingOut,
+  openCartSignal,
+  updateCartQuantity,
+  checkoutCart,
+}: Pick<
+  StorefrontCart,
+  | "cartLines"
+  | "cartCount"
+  | "cartTotal"
+  | "checkoutError"
+  | "checkingOut"
+  | "openCartSignal"
+  | "updateCartQuantity"
+  | "checkoutCart"
+>) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (openCartSignal > 0) setOpen(true);
+  }, [openCartSignal]);
+
+  return (
+    <div className="cart-menu">
+      <button
+        className="cart-menu-button"
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-label={`Carrito con ${cartCount} producto${cartCount === 1 ? "" : "s"}`}
+      >
+        <span aria-hidden="true">🛒</span>
+        <strong>{cartCount}</strong>
+      </button>
+      {open ? (
+        <div className="cart-dropdown">
+          <div className="cart-dropdown-header">
+            <h3>Carrito</h3>
+            <span>{formatMoney(cartTotal)}</span>
+          </div>
+          {cartLines.length === 0 ? (
+            <p className="meta">Agrega kits del catálogo para preparar tu compra.</p>
+          ) : (
+            <div className="cart-lines">
+              {cartLines.map(({ product, quantity }) => (
+                <div className="cart-line" key={product.id}>
+                  <div>
+                    <strong>{product.name}</strong>
+                    <span>{formatMoney(product.priceUsd * quantity)}</span>
+                  </div>
+                  <div className="cart-line-actions">
+                    <div className="quantity-control">
+                      <button type="button" onClick={() => updateCartQuantity(product.id, quantity - 1)}>
+                        -
+                      </button>
+                      <span>{quantity}</span>
+                      <button
+                        type="button"
+                        disabled={quantity >= product.stock}
+                        onClick={() => updateCartQuantity(product.id, quantity + 1)}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <button
+                      className="remove-line-button"
+                      type="button"
+                      onClick={() => updateCartQuantity(product.id, 0)}
+                      aria-label={`Eliminar ${product.name} del carrito`}
+                      title="Eliminar"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={cartCount === 0 || checkingOut}
+            onClick={() => void checkoutCart()}
+          >
+            {checkingOut ? "Redirigiendo..." : "Comprar carrito"}
+          </button>
+          {checkoutError ? <p className="status-error">{checkoutError}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RootLayout({ children, cart }: { children: React.ReactNode; cart: StorefrontCart }) {
   const clerkReady = isClerkConfigured();
   const { user } = useUser();
   const role = getUserRole(user);
@@ -121,9 +385,25 @@ function RootLayout({ children }: { children: React.ReactNode }) {
             UrbanSprout
           </Link>
           <div className="nav-actions">
-            <button className="button button-outline theme-toggle" type="button" onClick={toggleThemeMode}>
-              {themeMode === "dark" ? "Modo claro" : "Modo oscuro"}
+            <button
+              className="theme-toggle"
+              type="button"
+              onClick={toggleThemeMode}
+              aria-label={themeMode === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+              title={themeMode === "dark" ? "Modo claro" : "Modo oscuro"}
+            >
+              <span aria-hidden="true">{themeMode === "dark" ? "☀" : "☾"}</span>
             </button>
+            <CartDropdown
+              cartLines={cart.cartLines}
+              cartCount={cart.cartCount}
+              cartTotal={cart.cartTotal}
+              checkoutError={cart.checkoutError}
+              checkingOut={cart.checkingOut}
+              openCartSignal={cart.openCartSignal}
+              updateCartQuantity={cart.updateCartQuantity}
+              checkoutCart={cart.checkoutCart}
+            />
             {clerkReady && user ? (
               <>
                 <Link to="/dashboard" className="button button-outline">
@@ -160,27 +440,22 @@ function RootLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function HomePage() {
+function HomePage({
+  products,
+  loadingProducts,
+  addToCart,
+  cartLines,
+  cartCount,
+  cartTotal,
+  checkoutError,
+  checkingOut,
+  lastAddedProductId,
+  updateCartQuantity,
+  checkoutCart,
+  viewCart,
+}: StorefrontCart) {
   const { user } = useUser();
   const clerkReady = isClerkConfigured();
-  const [products, setProducts] = useState<Product[]>(fallbackProducts);
-  const [loadingProducts, setLoadingProducts] = useState(true);
-
-  useEffect(() => {
-    async function loadProducts() {
-      setLoadingProducts(true);
-      try {
-        const fetchedProducts = await fetchProductsFromApi();
-        setProducts(fetchedProducts);
-      } catch (error) {
-        console.warn("Failed to load products, using fallback:", error);
-        setProducts(fallbackProducts);
-      } finally {
-        setLoadingProducts(false);
-      }
-    }
-    void loadProducts();
-  }, []);
 
   return (
     <main>
@@ -228,13 +503,66 @@ function HomePage() {
 
       <section id="catalogo" className="products">
         <div className="container">
-          <h2 className="section-title">Kits para arrancar en una tarde</h2>
+          <div className="catalog-header">
+            <h2 className="section-title">Kits para arrancar en una tarde</h2>
+          </div>
+          {false ? <section className="cart-panel" id="carrito" aria-label="Carrito de compra">
+            <div>
+              <h3>Carrito</h3>
+              <p className="meta">
+                {cartCount === 0
+                  ? "Agrega kits del catálogo para preparar tu compra."
+                  : `${cartCount} producto${cartCount === 1 ? "" : "s"} en el carrito.`}
+              </p>
+            </div>
+            {cartLines.length > 0 ? (
+              <div className="cart-lines">
+                {cartLines.map(({ product, quantity }) => (
+                  <div className="cart-line" key={product.id}>
+                    <div>
+                      <strong>{product.name}</strong>
+                      <span>{formatMoney(product.priceUsd * quantity)}</span>
+                    </div>
+                    <div className="quantity-control">
+                      <button type="button" onClick={() => updateCartQuantity(product.id, quantity - 1)}>
+                        −
+                      </button>
+                      <span>{quantity}</span>
+                      <button
+                        type="button"
+                        disabled={quantity >= product.stock}
+                        onClick={() => updateCartQuantity(product.id, quantity + 1)}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="cart-summary">
+              <strong>Total: {formatMoney(cartTotal)}</strong>
+              <button
+                className="button button-primary"
+                type="button"
+                disabled={cartCount === 0 || checkingOut}
+                onClick={() => void checkoutCart()}
+              >
+                {checkingOut ? "Redirigiendo..." : "Comprar carrito"}
+              </button>
+            </div>
+            {checkoutError ? <p className="status-error">{checkoutError}</p> : null}
+          </section> : null}
           {loadingProducts ? (
             <p className="loading-text">Cargando productos...</p>
           ) : (
             <div className="grid">
-              {products.map((product) => (
-                <article className="product" key={product.id}>
+              {products.map((product) => {
+                const productInCart = cartLines.some((line) => line.product.id === product.id);
+                const justAdded = lastAddedProductId === product.id;
+
+                return (
+                <article className={`product ${justAdded ? "product-added" : ""}`} key={product.id}>
                   {product.imageUrl && (
                     <div className="product-image">
                       <img src={product.imageUrl} alt={product.name} />
@@ -247,14 +575,17 @@ function HomePage() {
                     {getStockLabel(product)}
                   </span>
                   <p className="price">${product.priceUsd.toFixed(2)} USD</p>
-                  <CheckoutButton
-                    productId={product.id}
-                    userId={user?.id ?? null}
-                    userEmail={user?.primaryEmailAddress?.emailAddress ?? null}
+                  <button
+                    className="button button-primary"
+                    type="button"
                     disabled={product.stock <= 0}
-                  />
+                    onClick={() => (productInCart ? viewCart() : addToCart(product))}
+                  >
+                    {product.stock <= 0 ? "Sin stock" : productInCart ? "Ver en carrito" : "Agregar al carrito"}
+                  </button>
                 </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -427,6 +758,7 @@ function CustomerDashboardPage() {
                   <div className="purchase-meta-grid">
                     <span>Orden: {purchase.id.slice(0, 8)}</span>
                     <span>Fecha: {formatDate(purchase.createdAt)}</span>
+                    <span>Cantidad: {purchase.quantity}</span>
                     <span>Monto: {formatMoney(purchase.amountUsd)}</span>
                     <span>Acceso: {getPurchaseAccessText(purchase.status)}</span>
                   </div>
@@ -511,10 +843,21 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function AppWithClerk() {
+  const { user } = useUser();
+  const cart = useStorefrontCart(
+    user?.id ?? null,
+    user?.primaryEmailAddress?.emailAddress ?? null,
+  );
+
   return (
-    <RootLayout>
+    <RootLayout cart={cart}>
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route
+          path="/"
+          element={
+            <HomePage {...cart} />
+          }
+        />
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/sign-up" element={<SignUpPage />} />
         <Route
@@ -535,24 +878,21 @@ function AppWithClerk() {
 function AppWithoutClerk() {
   const adminAppUrl = getAdminAppUrl();
   const { themeMode, toggleThemeMode } = useThemeMode();
-  const [products, setProducts] = useState<Product[]>(fallbackProducts);
-  const [loadingProducts, setLoadingProducts] = useState(true);
-
-  useEffect(() => {
-    async function loadProducts() {
-      setLoadingProducts(true);
-      try {
-        const fetchedProducts = await fetchProductsFromApi();
-        setProducts(fetchedProducts);
-      } catch (error) {
-        console.warn("Failed to load products, using fallback:", error);
-        setProducts(fallbackProducts);
-      } finally {
-        setLoadingProducts(false);
-      }
-    }
-    void loadProducts();
-  }, []);
+  const cart = useStorefrontCart(null, null);
+  const {
+    products,
+    loadingProducts,
+    cartLines,
+    cartCount,
+    cartTotal,
+    checkoutError,
+    checkingOut,
+    lastAddedProductId,
+    addToCart,
+    viewCart,
+    updateCartQuantity,
+    checkoutCart,
+  } = cart;
 
   return (
     <>
@@ -563,9 +903,25 @@ function AppWithoutClerk() {
             UrbanSprout
           </Link>
           <div className="nav-actions">
-            <button className="button button-outline theme-toggle" type="button" onClick={toggleThemeMode}>
-              {themeMode === "dark" ? "Modo claro" : "Modo oscuro"}
+            <button
+              className="theme-toggle"
+              type="button"
+              onClick={toggleThemeMode}
+              aria-label={themeMode === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+              title={themeMode === "dark" ? "Modo claro" : "Modo oscuro"}
+            >
+              <span aria-hidden="true">{themeMode === "dark" ? "☀" : "☾"}</span>
             </button>
+            <CartDropdown
+              cartLines={cart.cartLines}
+              cartCount={cart.cartCount}
+              cartTotal={cart.cartTotal}
+              checkoutError={cart.checkoutError}
+              checkingOut={cart.checkingOut}
+              openCartSignal={cart.openCartSignal}
+              updateCartQuantity={cart.updateCartQuantity}
+              checkoutCart={cart.checkoutCart}
+            />
             <button className="button button-outline" type="button" disabled>
               Configura Clerk para login
             </button>
@@ -601,13 +957,69 @@ function AppWithoutClerk() {
 
               <section id="catalogo" className="products">
                 <div className="container">
-                  <h2 className="section-title">Kits para arrancar en una tarde</h2>
+                  <div className="catalog-header">
+                    <h2 className="section-title">Kits para arrancar en una tarde</h2>
+                    <a className="cart-chip" href="#carrito">
+                      Carrito ({cartCount})
+                    </a>
+                  </div>
+                  <section className="cart-panel" id="carrito" aria-label="Carrito de compra">
+                    <div>
+                      <h3>Carrito</h3>
+                      <p className="meta">
+                        {cartCount === 0
+                          ? "Agrega kits del catálogo para preparar tu compra."
+                          : `${cartCount} producto${cartCount === 1 ? "" : "s"} en el carrito.`}
+                      </p>
+                    </div>
+                    {cartLines.length > 0 ? (
+                      <div className="cart-lines">
+                        {cartLines.map(({ product, quantity }) => (
+                          <div className="cart-line" key={product.id}>
+                            <div>
+                              <strong>{product.name}</strong>
+                              <span>{formatMoney(product.priceUsd * quantity)}</span>
+                            </div>
+                            <div className="quantity-control">
+                              <button type="button" onClick={() => updateCartQuantity(product.id, quantity - 1)}>
+                                −
+                              </button>
+                              <span>{quantity}</span>
+                              <button
+                                type="button"
+                                disabled={quantity >= product.stock}
+                                onClick={() => updateCartQuantity(product.id, quantity + 1)}
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="cart-summary">
+                      <strong>Total: {formatMoney(cartTotal)}</strong>
+                      <button
+                        className="button button-primary"
+                        type="button"
+                        disabled={cartCount === 0 || checkingOut}
+                        onClick={() => void checkoutCart()}
+                      >
+                        {checkingOut ? "Redirigiendo..." : "Comprar carrito"}
+                      </button>
+                    </div>
+                    {checkoutError ? <p className="status-error">{checkoutError}</p> : null}
+                  </section>
                   {loadingProducts ? (
                     <p className="loading-text">Cargando productos...</p>
                   ) : (
                     <div className="grid">
-                      {products.map((product) => (
-                        <article className="product" key={product.id}>
+                      {products.map((product) => {
+                        const productInCart = cartLines.some((line) => line.product.id === product.id);
+                        const justAdded = lastAddedProductId === product.id;
+
+                        return (
+                        <article className={`product ${justAdded ? "product-added" : ""}`} key={product.id}>
                           {product.imageUrl && (
                             <div className="product-image">
                               <img src={product.imageUrl} alt={product.name} />
@@ -620,14 +1032,17 @@ function AppWithoutClerk() {
                             {getStockLabel(product)}
                           </span>
                           <p className="price">${product.priceUsd.toFixed(2)} USD</p>
-                          <CheckoutButton
-                            productId={product.id}
-                            userId={null}
-                            userEmail={null}
+                          <button
+                            className="button button-primary"
+                            type="button"
                             disabled={product.stock <= 0}
-                          />
+                            onClick={() => (productInCart ? viewCart() : addToCart(product))}
+                          >
+                            {product.stock <= 0 ? "Sin stock" : productInCart ? "Ver en carrito" : "Agregar al carrito"}
+                          </button>
                         </article>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

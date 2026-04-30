@@ -59,7 +59,7 @@ export const productsById = Object.fromEntries(fallbackProducts.map((p) => [p.id
 export async function fetchProductsFromApi(): Promise<Product[]> {
   const apiUrl = getApiUrl();
   try {
-    const response = await fetch(`${apiUrl}/products`);
+    const response = await fetch(`${apiUrl}/products`, { cache: "no-store" });
     if (!response.ok) {
       console.warn("Failed to fetch products from API, using fallback");
       return fallbackProducts;

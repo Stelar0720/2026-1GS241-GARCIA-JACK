@@ -14,6 +14,7 @@ import {
   listProducts,
   OrderStatus,
   ProductInput,
+  ProductRecord,
   updateInventory,
   updateOrderStatus,
   updateProduct,
@@ -28,7 +29,9 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,ht
   .filter(Boolean);
 
 const processedEvents = new Set<string>();
-mkdirSync(uploadsDir, { recursive: true });
+if (!existsSync(uploadsDir)) {
+  mkdirSync(uploadsDir, { recursive: true });
+}
 
 function getCorsHeaders(origin: string | null) {
   const safeOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
@@ -94,13 +97,140 @@ function readProductInput(body: Partial<ProductInput>) {
   };
 }
 
+type CheckoutLineInput = {
+  productId: string;
+  quantity: number;
+};
+
+type CheckoutLine = {
+  product: ProductRecord;
+  quantity: number;
+  amountUsd: number;
+};
+
+function getCheckoutOrderId(sessionId: string, productId: string) {
+  return `${sessionId}:${productId}`;
+}
+
+function normalizeCheckoutLines(body: {
+  productId?: string;
+  items?: { productId?: string; quantity?: number }[];
+}) {
+  const rawItems =
+    Array.isArray(body.items) && body.items.length > 0
+      ? body.items
+      : body.productId
+        ? [{ productId: body.productId, quantity: 1 }]
+        : [];
+
+  const quantitiesByProduct = new Map<string, number>();
+  for (const item of rawItems) {
+    const productId = item.productId?.trim();
+    if (!productId) continue;
+
+    const quantity = Math.max(1, Math.floor(Number(item.quantity) || 1));
+    quantitiesByProduct.set(productId, (quantitiesByProduct.get(productId) ?? 0) + quantity);
+  }
+
+  return [...quantitiesByProduct.entries()].map(
+    ([productId, quantity]): CheckoutLineInput => ({ productId, quantity }),
+  );
+}
+
+function buildCheckoutLines(items: CheckoutLineInput[]) {
+  const lines: CheckoutLine[] = [];
+
+  for (const item of items) {
+    const product = getActiveProduct(item.productId);
+    if (!product) {
+      return { error: "Uno de los productos del carrito no es vÃ¡lido." };
+    }
+
+    if (getInventoryStock(product.id) < item.quantity) {
+      return { error: `${product.name} no tiene stock suficiente.` };
+    }
+
+    lines.push({
+      product,
+      quantity: item.quantity,
+      amountUsd: product.priceUsd * item.quantity,
+    });
+  }
+
+  if (lines.length === 0) {
+    return { error: "Agrega al menos un producto al carrito." };
+  }
+
+  return { data: lines };
+}
+
+function readCheckoutLinesFromSession(session: Stripe.Checkout.Session, fallbackProductId: string) {
+  const cartItems = session.metadata?.cartItems;
+  if (cartItems) {
+    try {
+      const parsed = JSON.parse(cartItems) as {
+        productId?: string;
+        quantity?: number;
+        amountUsd?: number;
+      }[];
+      const lines = parsed
+        .map((item) => ({
+          productId: item.productId?.trim() || "",
+          quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)),
+          amountUsd: Number(item.amountUsd) || 0,
+        }))
+        .filter((item) => item.productId);
+
+      if (lines.length > 0) return lines;
+    } catch {
+      console.warn(`[checkout] Metadata cartItems invÃ¡lida para ${session.id}`);
+    }
+  }
+
+  return [
+    {
+      productId: session.metadata?.productId ?? fallbackProductId,
+      quantity: 1,
+      amountUsd: (session.amount_total ?? 0) / 100,
+    },
+  ];
+}
+
+function upsertOrdersFromCheckoutSession(params: {
+  session: Stripe.Checkout.Session;
+  fallbackProductId: string;
+  fallbackBuyerId: string;
+  fallbackBuyerEmail?: string | null;
+  status: OrderStatus;
+}) {
+  const buyerId = params.session.metadata?.buyerId ?? params.fallbackBuyerId;
+  const buyerEmail =
+    params.session.customer_details?.email ??
+    params.session.customer_email ??
+    params.fallbackBuyerEmail ??
+    null;
+
+  for (const line of readCheckoutLinesFromSession(params.session, params.fallbackProductId)) {
+    upsertOrderFromCheckout({
+      checkoutSessionId: getCheckoutOrderId(params.session.id, line.productId),
+      productId: line.productId,
+      buyerId,
+      buyerEmail,
+      status: params.status,
+      quantity: line.quantity,
+      amountUsd: line.amountUsd,
+    });
+  }
+}
+
 async function refreshPendingOrdersWithStripe() {
   if (!stripeClient) return;
 
   const pendingOrders = listPendingOrders();
   for (const order of pendingOrders) {
     try {
-      const session = await stripeClient.checkout.sessions.retrieve(order.checkoutSessionId);
+      const stripeSessionId = order.checkoutSessionId.split(":")[0];
+      const session = await stripeClient.checkout.sessions.retrieve(stripeSessionId);
       const syncedStatus: OrderStatus =
         session.payment_status === "paid" || session.status === "complete"
           ? "paid"
@@ -108,13 +238,11 @@ async function refreshPendingOrdersWithStripe() {
             ? "cancelled"
             : "pending";
 
-      upsertOrderFromCheckout({
-        checkoutSessionId: session.id,
-        productId: session.metadata?.productId ?? order.productId,
-        buyerId: session.metadata?.buyerId ?? order.buyerId,
-        buyerEmail: session.customer_details?.email ?? session.customer_email ?? null,
+      upsertOrdersFromCheckoutSession({
+        session,
+        fallbackProductId: order.productId,
+        fallbackBuyerId: order.buyerId,
         status: syncedStatus,
-        amountUsd: (session.amount_total ?? 0) / 100 || order.amountUsd,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown Stripe sync error";
@@ -146,13 +274,12 @@ async function syncBuyerOrdersWithStripe(buyerId: string, buyerEmail?: string | 
           ? "cancelled"
           : "pending";
 
-    upsertOrderFromCheckout({
-      checkoutSessionId: session.id,
-      productId: session.metadata?.productId ?? "unknown-product",
-      buyerId: sessionBuyerId || buyerId,
-      buyerEmail: sessionEmail || normalizedEmail,
+    upsertOrdersFromCheckoutSession({
+      session,
+      fallbackProductId: session.metadata?.productId ?? "unknown-product",
+      fallbackBuyerId: sessionBuyerId || buyerId,
+      fallbackBuyerEmail: sessionEmail || normalizedEmail,
       status: syncedStatus,
-      amountUsd: (session.amount_total ?? 0) / 100,
     });
   }
 }
@@ -277,24 +404,25 @@ Bun.serve({
 
       const body = (await req.json()) as {
         productId?: string;
+        items?: { productId?: string; quantity?: number }[];
         userId?: string | null;
         userEmail?: string | null;
       };
 
-      const selectedProduct = body.productId ? getActiveProduct(body.productId) : null;
-      if (!selectedProduct) {
-        return jsonResponse({ error: "Producto no válido." }, { status: 400, origin });
+      const parsedLines = buildCheckoutLines(normalizeCheckoutLines(body));
+      if ("error" in parsedLines) {
+        return jsonResponse({ error: parsedLines.error }, { status: 400, origin });
       }
-      if (getInventoryStock(selectedProduct.id) <= 0) {
-        return jsonResponse(
-          { error: "Este producto no tiene stock disponible." },
-          { status: 409, origin },
-        );
-      }
+      const checkoutLines = parsedLines.data;
 
       const storefrontUrl = process.env.APP_URL?.trim() || "http://localhost:3000";
       const normalizedEmail = body.userEmail?.trim().toLowerCase() || undefined;
       const buyerId = body.userId?.trim() || `guest-${Date.now()}`;
+      const cartItems = checkoutLines.map((line) => ({
+        productId: line.product.id,
+        quantity: line.quantity,
+        amountUsd: line.amountUsd,
+      }));
 
       try {
         const session = await stripeClient.checkout.sessions.create({
@@ -303,32 +431,34 @@ Bun.serve({
           cancel_url: `${storefrontUrl}/dashboard?payment=cancelled`,
           customer_email: normalizedEmail,
           metadata: {
-            productId: selectedProduct.id,
+            productId: checkoutLines[0].product.id,
             buyerId,
+            cartItems: JSON.stringify(cartItems),
           },
-          line_items: [
-            {
-              quantity: 1,
+          line_items: checkoutLines.map((line) => ({
+              quantity: line.quantity,
               price_data: {
                 currency: "usd",
-                unit_amount: Math.round(selectedProduct.priceUsd * 100),
+                unit_amount: Math.round(line.product.priceUsd * 100),
                 product_data: {
-                  name: selectedProduct.name,
-                  description: selectedProduct.description,
+                  name: line.product.name,
+                  description: line.product.description,
                 },
               },
-            },
-          ],
+            })),
         });
 
-        upsertOrderFromCheckout({
-          checkoutSessionId: session.id,
-          productId: selectedProduct.id,
-          buyerId,
-          buyerEmail: normalizedEmail ?? null,
-          status: "pending",
-          amountUsd: selectedProduct.priceUsd,
-        });
+        for (const line of checkoutLines) {
+          upsertOrderFromCheckout({
+            checkoutSessionId: getCheckoutOrderId(session.id, line.product.id),
+            productId: line.product.id,
+            buyerId,
+            buyerEmail: normalizedEmail ?? null,
+            status: "pending",
+            quantity: line.quantity,
+            amountUsd: line.amountUsd,
+          });
+        }
 
         return jsonResponse({ checkoutUrl: session.url }, { origin });
       } catch (error) {
@@ -382,11 +512,11 @@ Bun.serve({
       }
 
       const body = (await req.json()) as { stock?: number; minimumStock?: number };
-      if (typeof body.stock !== "number" || typeof body.minimumStock !== "number") {
-        return jsonResponse({ error: "Stock y mínimo son requeridos." }, { status: 400, origin });
+      if (typeof body.stock !== "number") {
+        return jsonResponse({ error: "Stock es requerido." }, { status: 400, origin });
       }
 
-      updateInventory({ sku, stock: body.stock, minimumStock: body.minimumStock });
+      updateInventory({ sku, stock: body.stock, minimumStock: body.minimumStock ?? 0 });
       return jsonResponse({ ok: true }, { origin });
     }
 
@@ -420,13 +550,11 @@ Bun.serve({
 
       if (event.type === "checkout.session.completed" || event.type === "checkout.session.expired") {
         const session = event.data.object as Stripe.Checkout.Session;
-        upsertOrderFromCheckout({
-          checkoutSessionId: session.id,
-          productId: session.metadata?.productId ?? "unknown-product",
-          buyerId: session.metadata?.buyerId ?? "unknown-buyer",
-          buyerEmail: session.customer_details?.email ?? session.customer_email ?? null,
+        upsertOrdersFromCheckoutSession({
+          session,
+          fallbackProductId: session.metadata?.productId ?? "unknown-product",
+          fallbackBuyerId: session.metadata?.buyerId ?? "unknown-buyer",
           status: event.type === "checkout.session.completed" ? "paid" : "cancelled",
-          amountUsd: (session.amount_total ?? 0) / 100,
         });
       }
 

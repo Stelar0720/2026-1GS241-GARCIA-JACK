@@ -1,10 +1,13 @@
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const dbPath = process.env.BUN_DB_PATH?.trim() || "./data/urbansprout.sqlite";
-mkdirSync(dirname(dbPath), { recursive: true });
+const dbDir = dirname(dbPath);
+if (dbDir !== "." && !existsSync(dbDir)) {
+  mkdirSync(dbDir, { recursive: true });
+}
 
 export const db = new Database(dbPath, { create: true });
 
@@ -25,6 +28,9 @@ db.exec(`
 const orderColumns = db.query("PRAGMA table_info(orders)").all() as { name: string }[];
 if (!orderColumns.some((column) => column.name === "buyer_email")) {
   db.exec("ALTER TABLE orders ADD COLUMN buyer_email TEXT");
+}
+if (!orderColumns.some((column) => column.name === "quantity")) {
+  db.exec("ALTER TABLE orders ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1");
 }
 
 db.exec(`
@@ -118,6 +124,7 @@ export type PendingOrder = {
   productId: string;
   buyerId: string;
   amountUsd: number;
+  quantity: number;
 };
 
 export type ProductInput = {
@@ -156,6 +163,7 @@ export function listOrders() {
         buyer_id AS buyerId,
         buyer_email AS buyerEmail,
         status,
+        quantity,
         amount_usd AS amountUsd,
         created_at AS createdAt,
         updated_at AS updatedAt
@@ -181,6 +189,7 @@ export function listOrdersByBuyer(buyerId: string, buyerEmail?: string | null) {
         orders.buyer_id AS buyerId,
         orders.buyer_email AS buyerEmail,
         orders.status,
+        orders.quantity,
         orders.amount_usd AS amountUsd,
         orders.created_at AS createdAt,
         orders.updated_at AS updatedAt,
@@ -202,7 +211,8 @@ export function listPendingOrders(): PendingOrder[] {
         checkout_session_id AS checkoutSessionId,
         product_id AS productId,
         buyer_id AS buyerId,
-        amount_usd AS amountUsd
+        amount_usd AS amountUsd,
+        quantity
       FROM orders
       WHERE status = 'pending'`,
     )
@@ -211,13 +221,13 @@ export function listPendingOrders(): PendingOrder[] {
 
 export function updateOrderStatus(orderId: string, status: OrderStatus) {
   const previous = db
-    .query("SELECT product_id AS productId, status FROM orders WHERE id = ?")
-    .get(orderId) as { productId: string; status: OrderStatus } | null;
+    .query("SELECT product_id AS productId, status, quantity FROM orders WHERE id = ?")
+    .get(orderId) as { productId: string; status: OrderStatus; quantity: number } | null;
   const now = new Date().toISOString();
   db.query("UPDATE orders SET status = ?, updated_at = ? WHERE id = ?").run(status, now, orderId);
 
   if (previous?.productId && previous.status !== status) {
-    adjustInventoryForStatusChange(previous.productId, previous.status, status);
+    adjustInventoryForStatusChange(previous.productId, previous.status, status, previous.quantity);
   }
 }
 
@@ -225,15 +235,16 @@ function adjustInventoryForStatusChange(
   productId: string,
   previousStatus: OrderStatus | null,
   nextStatus: OrderStatus,
+  quantity: number,
 ) {
   createInventoryIfMissing(productId);
 
   if (previousStatus !== "paid" && nextStatus === "paid") {
-    decreaseInventory(productId, 1);
+    decreaseInventory(productId, quantity);
   }
 
   if (previousStatus === "paid" && nextStatus !== "paid") {
-    increaseInventory(productId, 1);
+    increaseInventory(productId, quantity);
   }
 }
 
@@ -271,34 +282,37 @@ export function upsertOrderFromCheckout(params: {
   buyerEmail?: string | null;
   status: OrderStatus;
   amountUsd: number;
+  quantity?: number;
 }) {
   const existing = db
-    .query("SELECT id, status FROM orders WHERE checkout_session_id = ?")
-    .get(params.checkoutSessionId) as { id: string; status: OrderStatus } | null;
+    .query("SELECT id, status, quantity FROM orders WHERE checkout_session_id = ?")
+    .get(params.checkoutSessionId) as { id: string; status: OrderStatus; quantity: number } | null;
   const now = new Date().toISOString();
+  const quantity = Math.max(1, Math.floor(params.quantity ?? 1));
 
   if (existing?.id) {
     db.query(
       `UPDATE orders
-       SET status = ?, amount_usd = ?, product_id = ?, buyer_id = ?, buyer_email = COALESCE(?, buyer_email), updated_at = ?
+       SET status = ?, amount_usd = ?, quantity = ?, product_id = ?, buyer_id = ?, buyer_email = COALESCE(?, buyer_email), updated_at = ?
        WHERE checkout_session_id = ?`,
     ).run(
       params.status,
       params.amountUsd,
+      quantity,
       params.productId,
       params.buyerId,
       params.buyerEmail?.trim().toLowerCase() || null,
       now,
       params.checkoutSessionId,
     );
-    adjustInventoryForStatusChange(params.productId, existing.status, params.status);
+    adjustInventoryForStatusChange(params.productId, existing.status, params.status, quantity);
     return;
   }
 
   db.query(
     `INSERT INTO orders (
-      id, checkout_session_id, product_id, buyer_id, buyer_email, status, amount_usd, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, checkout_session_id, product_id, buyer_id, buyer_email, status, quantity, amount_usd, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     randomUUID(),
     params.checkoutSessionId,
@@ -306,11 +320,12 @@ export function upsertOrderFromCheckout(params: {
     params.buyerId,
     params.buyerEmail?.trim().toLowerCase() || null,
     params.status,
+    quantity,
     params.amountUsd,
     now,
     now,
   );
-  adjustInventoryForStatusChange(params.productId, null, params.status);
+  adjustInventoryForStatusChange(params.productId, null, params.status, quantity);
 }
 
 export function listInventory() {
@@ -328,6 +343,7 @@ export function listInventory() {
 }
 
 export function updateInventory(params: { sku: string; stock: number; minimumStock: number }) {
+  createInventoryIfMissing(params.sku);
   const now = new Date().toISOString();
   db.query("UPDATE inventory SET stock = ?, minimum_stock = ?, updated_at = ? WHERE sku = ?").run(
     params.stock,

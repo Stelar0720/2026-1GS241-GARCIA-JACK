@@ -1,0 +1,285 @@
+
+> parcial2-urbansprout@0.1.0 dev
+> concurrently -k -n api,storefront -c green,cyan "npm run dev:api" "npm run dev:storefront"
+
+[api] 
+[api] > parcial2-urbansprout@0.1.0 dev:api
+[api] > bun --env-file=bun-api/.env --watch bun-api/src/index.ts
+[api] 
+[storefront] 
+[storefront] > parcial2-urbansprout@0.1.0 dev:storefront
+[storefront] > vite
+[storefront] 
+[api] 2 | import { mkdirSync } from "node:fs";
+[api] 3 | import { dirname } from "node:path";
+[api] 4 | import { randomUUID } from "node:crypto";
+[api] 5 | 
+[api] 6 | const dbPath = process.env.BUN_DB_PATH?.trim() || "./data/urbansprout.sqlite";
+[api] 7 | mkdirSync(dirname(dbPath), { recursive: true });
+[api]     ^
+[api] EEXIST: file already exists, mkdir 'data'
+[api]     path: "data",
+[api]  syscall: "mkdir",
+[api]    errno: -17,
+[api]     code: "EEXIST"
+[api] 
+[api]       at C:\Users\stela\OneDrive\Documentos\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\db.ts:7:1
+[api]       at loadAndEvaluateModule (2:1)
+[storefront] [2m2:20:30 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing dependencies because vite config has changed
+[storefront] 
+[storefront]   [32m[1mVITE[22m v8.0.10[39m  [2mready in [0m[1m348[22m[2m[0m ms[22m
+[storefront] 
+[storefront]   [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m3000[22m/[39m
+[storefront] [2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[api] 27 |   .split(",")
+[api] 28 |   .map((origin) => origin.trim())
+[api] 29 |   .filter(Boolean);
+[api] 30 | 
+[api] 31 | const processedEvents = new Set<string>();
+[api] 32 | mkdirSync(uploadsDir, { recursive: true });
+[api]      ^
+[api] EEXIST: file already exists, mkdir 'C:\Users\stela\OneDrive\Documentos\I SEMESTRE 2026\DSIX\parciales\Parcial2\public\uploads'
+[api]     path: "C:\\Users\\stela\\OneDrive\\Documentos\\I SEMESTRE 2026\\DSIX\\parciales\\Parcial2\\public\\uploads",
+[api]  syscall: "mkdir",
+[api]    errno: -17,
+[api]     code: "EEXIST"
+[api] 
+[api]       at C:\Users\stela\OneDrive\Documentos\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:32:1
+[api]       at loadAndEvaluateModule (2:1)
+[api] UrbanSprout Bun API running on http://localhost:4000
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[storefront] [2m2:31:53 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:32:29 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:33:13 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:33:32 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:33:53 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:34:53 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:35:32 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:36:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:37:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:38:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:38:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:39:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:39:12 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:39:44 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mindex.html[22m
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[storefront] [2m2:40:14 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[storefront] [2m2:40:25 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[storefront] [2m2:42:56 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[storefront] [2m2:44:03 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[storefront] [2m2:44:50 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m2:45:07 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m2:45:38 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[api] [orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: No such checkout.session: cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g
+[api] [orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: No such checkout.session: cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr
+[api] [orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: No such checkout.session: cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7
+[api] [orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: No such checkout.session: cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz
+[api] [orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: No such checkout.session: cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB
+[api] [orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: No such checkout.session: cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg
+[api] [orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: No such checkout.session: cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX
+[storefront] [2m2:46:12 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m2:49:36 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:49:51 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:49:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:50:03 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:50:07 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:50:16 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:50:23 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:50:36 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[api] 282 |       status: syncedStatus,
+[api] 283 |     });
+[api] 284 |   }
+[api] 285 | }
+[api] 286 | 
+[api] 287 | Bun.serve({
+[api]           ^
+[api] error: Failed to start server. Is port 4000 in use?
+[api]  syscall: "listen",
+[api]    errno: 0,
+[api]     code: "EADDRINUSE"
+[api] 
+[api]       at C:\Users\stela\OneDrive\Documentos\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:287:5
+[api]       at loadAndEvaluateModule (2:1)
+[storefront] [2m2:52:52 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m2:55:49 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m2:56:01 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m3:02:53 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m3:04:01 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] [2m3:04:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[storefront] [2m3:26:47 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m3:27:25 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m6:37:06 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31m[Unhandled rejection] [1mClerkRuntimeError[22m: Clerk: Failed to load Clerk, failed to load script: https://allowing-crawdad-15.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js
+[storefront] 
+[storefront] (code="failed_to_load_clerk_js")
+[storefront] 
+[storefront] 
+[storefront] [39m > node_modules/@clerk/clerk-react/node_modules/@clerk/shared/dist/runtime/loadClerkJsScript-CTdEumI2.mjs:149:8
+[storefront] 
+[storefront] [2m6:37:12 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mClerkRuntimeError: Clerk: Failed to load Clerk
+[storefront] 
+[storefront] (code="failed_to_load_clerk_js_timeout")
+[storefront] 
+[storefront] 
+[storefront]     at handleTimeout (http://localhost:3000/node_modules/.vite/deps/@clerk_clerk-react.js?v=b5bd02ef:5334:41)
+[storefront] [2m6:37:24 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31m[Unhandled rejection] [1mClerkRuntimeError[22m: Clerk: Failed to load Clerk, failed to load script: https://allowing-crawdad-15.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js
+[storefront] 
+[storefront] (code="failed_to_load_clerk_js")
+[storefront] 
+[storefront] 
+[storefront] [39m > node_modules/@clerk/clerk-react/node_modules/@clerk/shared/dist/runtime/loadClerkJsScript-CTdEumI2.mjs:149:8
+[storefront] 
+[storefront] [2m6:37:27 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mClerkRuntimeError: Clerk: Failed to load Clerk
+[storefront] 
+[storefront] (code="failed_to_load_clerk_js_timeout")
+[storefront] 
+[storefront] 
+[storefront]     at handleTimeout (http://localhost:3000/node_modules/.vite/deps/@clerk_clerk-react.js?v=b5bd02ef:5334:41)
+[storefront] [2m6:46:09 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m6:46:10 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22me: Clerk: 🔒 
+[storefront] The SignIn or SignUp modals do not render when a user is already signed in, unless the application allows multiple sessions. Since a user is signed in and this application only allows a single session, this is no-op.
+[storefront] (This notice only appears in development)
+[storefront] 
+[storefront] (code="cannot_render_single_session_enabled")
+[storefront] 
+[storefront] 
+[storefront]     at e5.openSignIn (https://allowing-crawdad-15.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:5:36664)
+[storefront]     at _IsomorphicClerk.hydrateClerkJS (http://localhost:3000/node_modules/.vite/deps/@clerk_clerk-react.js?v=b5bd02ef:6217:45)
+[storefront]     at _IsomorphicClerk.loadClerkJS (http://localhost:3000/node_modules/.vite/deps/@clerk_clerk-react.js?v=b5bd02ef:6891:70)
+[storefront] [2m6:46:39 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m6:52:15 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m6:53:01 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m6:53:14 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m6:53:56 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m7:03:47 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m7:04:22 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
