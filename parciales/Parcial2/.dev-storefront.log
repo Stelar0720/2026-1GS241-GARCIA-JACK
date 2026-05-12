@@ -283,3 +283,45 @@
 [storefront] [2m6:53:56 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
 [storefront] [2m7:03:47 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
 [storefront] [2m7:04:22 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m7:35:25 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m8:33:04 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mClerkRuntimeError: Clerk: Failed to load Clerk
+[storefront] 
+[storefront] (code="failed_to_load_clerk_js_timeout")
+[storefront] 
+[storefront] 
+[storefront]     at handleTimeout (http://localhost:3000/node_modules/.vite/deps/@clerk_clerk-react.js?v=b5bd02ef:5334:41)
+[storefront] [2m8:33:15 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31m[Unhandled rejection] [1mClerkRuntimeError[22m: Clerk: Failed to load Clerk, failed to load script: https://allowing-crawdad-15.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js
+[storefront] 
+[storefront] (code="failed_to_load_clerk_js")
+[storefront] 
+[storefront] 
+[storefront] [39m > node_modules/@clerk/clerk-react/node_modules/@clerk/shared/dist/runtime/loadClerkJsScript-CTdEumI2.mjs:149:8
+[storefront] 
+[storefront] [2m8:33:17 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31m[Unhandled rejection] [1mClerkRuntimeError[22m: Clerk: Failed to load Clerk, failed to load script: https://allowing-crawdad-15.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js
+[storefront] 
+[storefront] (code="failed_to_load_clerk_js")
+[storefront] 
+[storefront] 
+[storefront] [39m > node_modules/@clerk/clerk-react/node_modules/@clerk/shared/dist/runtime/loadClerkJsScript-CTdEumI2.mjs:149:8
+[storefront] 
+[storefront] [2m8:33:20 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mClerkRuntimeError: Clerk: Failed to load Clerk
+[storefront] 
+[storefront] (code="failed_to_load_clerk_js_timeout")
+[storefront] 
+[storefront] 
+[storefront]     at handleTimeout (http://localhost:3000/node_modules/.vite/deps/@clerk_clerk-react.js?v=b5bd02ef:5334:41)
+[storefront] [2m8:36:21 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m8:37:04 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m8:41:17 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m8:41:27 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m8:42:02 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m9:04:26 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m9:20:34 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m9:52:45 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m10:58:33 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m10:04:46 AM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m11:44:19 AM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mClerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+[storefront] [2m11:45:33 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[storefront] npm run dev:storefront exited with code 1073807364
+--> Sending SIGTERM to other processes..
+[api] npm run dev:api exited with code 1073807364

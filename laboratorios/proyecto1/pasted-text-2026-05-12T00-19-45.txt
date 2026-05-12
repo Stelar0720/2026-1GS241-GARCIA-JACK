@@ -1,0 +1,385 @@
+Actúa como arquitecto de software, diseñador UX/UI y desarrollador senior full-stack. Necesito que me ayudes a estructurar un proyecto universitario interno llamado:
+
+“Sinnoh Edition: Pokémon World Championships”
+
+IMPORTANTE:
+Este es un proyecto académico, educativo y sin fines de lucro. No se venderá ni se monetizará. Incluye un pequeño footer legal/académico que diga:
+“Proyecto universitario desarrollado únicamente con fines educativos y académicos. No está afiliado, asociado, autorizado ni patrocinado por Nintendo, Game Freak, The Pokémon Company ni sus marcas relacionadas.”
+
+OBJETIVO GENERAL:
+Crear una aplicación web multijugador 1 vs 1 inspirada visualmente en Pokémon Platino / cuarta generación Nintendo DS, pero usando todos los Pokémon disponibles en PokéAPI. El juego debe permitir que dos jugadores jueguen desde computadoras distintas mediante una lobby online en tiempo real.
+
+STACK PROPUESTO:
+Frontend:
+- React
+- TanStack Start
+- Bun
+- Diseño pixel art estilo Nintendo DS / Pokémon Platino
+
+Backend:
+- Hono sobre Bun
+
+Base de datos / tiempo real:
+- Firebase Firestore o Realtime Database
+
+Fuente de datos:
+- PokéAPI
+
+IMPORTANTE SOBRE POKÉAPI Y CACHÉ:
+No quiero que el frontend consulte masivamente PokéAPI porque puede colapsar la PC o hacer demasiadas peticiones. Diseña una arquitectura con caché:
+PokéAPI → Backend Hono → Caché local/Firebase/SQLite/JSON → Frontend React
+
+La caché debe guardar como mínimo:
+- ID del Pokémon
+- Nombre
+- Generación
+- Tipos
+- Sprite frontal
+- Sprite trasero
+- Lista de movimientos disponibles
+- Movimientos filtrados para selección aleatoria
+- Datos de tipos
+- Tabla de efectividad
+
+PokéAPI tiene endpoints para Pokémon, generaciones y movimientos, y también existe un repositorio oficial de sprites que puede usarse para evitar depender de cargas repetitivas de imágenes. Toma esto en cuenta en la arquitectura.
+
+FLUJO PRINCIPAL DEL JUEGO:
+1. Pantalla inicial: “SELECCIONA A TU CAMPEÓN”
+2. El jugador ingresa su nombre.
+3. Elige género:
+   - Hombre
+   - Mujer
+   - Otro
+4. Según el género, elige sprite de campeón:
+   - Hombre: mostrar protagonistas masculinos de los juegos.
+   - Mujer: mostrar protagonistas femeninos de los juegos.
+   - Otro: permitir elegir cualquier sprite.
+5. Se permite que ambos jugadores elijan el mismo campeón. Justificación: dimensiones paralelas.
+6. Luego puede crear una sala o unirse a una sala online.
+7. La sala debe funcionar entre 2 computadoras distintas.
+8. Fase de bans estilo League of Legends.
+9. Preguntar si desea rellenar el equipo aleatoriamente.
+10. Selección de Pokémon.
+11. Asignación automática de 4 ataques aleatorios por Pokémon.
+12. Mostrar trofeos/easter eggs si aplica.
+13. Coin flip animado para decidir quién inicia.
+14. Batalla por turnos.
+15. Pantalla de resultado final.
+
+LOBBY ONLINE:
+- Un jugador crea sala.
+- El sistema genera código.
+- Otro jugador se une con ese código.
+- Ambos jugadores aparecen en pantalla.
+- Cuando ambos están listos, inicia el flujo competitivo.
+- Usar estados en tiempo real.
+
+Estados sugeridos de sala:
+- champion_select
+- waiting
+- ban_phase
+- team_select
+- pre_battle_awards
+- coin_flip
+- battle
+- finished
+
+SELECCIÓN DE CAMPEÓN:
+Esta es la primera pantalla del juego y funciona como identificador visual del jugador antes de la lobby.
+
+Título:
+“SELECCIONA A TU CAMPEÓN”
+
+Reglas:
+- El jugador puede elegir nombre.
+- Puede elegir género.
+- Puede elegir sprite.
+- Dos jugadores pueden elegir el mismo sprite.
+- Si no hay sprites oficiales disponibles en PokéAPI, usar placeholders, sprites pixel art personalizados o assets libres.
+- No complicar con personalización avanzada.
+
+FASE DE BANS:
+- Cada jugador puede banear Pokémon.
+- Recomendación: 3 bans por jugador.
+- Los Pokémon baneados no pueden seleccionarse.
+- Debe sentirse similar a un draft competitivo.
+
+SELECCIÓN DE EQUIPO:
+- Se pueden elegir Pokémon de todas las generaciones disponibles en PokéAPI.
+- Máximo 6 Pokémon.
+- Mínimo 1 Pokémon.
+- Tiempo límite: 1 minuto.
+- El jugador puede decidir antes de seleccionar si quiere relleno aleatorio.
+
+REGLAS DEL RELLENO ALEATORIO:
+Antes de selección, preguntar:
+“¿Deseas rellenar el equipo automáticamente?”
+Opciones:
+- Sí, rellenar aleatorio.
+- No, jugar con mi selección.
+
+Reglas:
+- Si elige “No”, puede jugar con 1, 2, 3, 4, 5 o 6 Pokémon.
+- Si elige “Sí” y selecciona menos de 6, el sistema completa hasta 6 Pokémon aleatorios.
+- Si no elige ningún Pokémon y se acaba el tiempo, recibe 6 Pokémon aleatorios.
+- Si eligió 3 y activó relleno, recibe 3 Pokémon aleatorios adicionales.
+- Los Pokémon aleatorios no deben estar baneados.
+
+ATAQUES:
+- Cada Pokémon debe tener exactamente 4 ataques.
+- Los ataques se seleccionan aleatoriamente desde los movimientos disponibles del Pokémon en PokéAPI.
+- No se repiten ataques dentro del mismo Pokémon.
+- Por ahora no considerar estadísticas reales complejas.
+- Para MVP, ignorar método de aprendizaje, nivel o versión del juego.
+- Más adelante se puede filtrar por movimientos compatibles con cuarta generación.
+
+BATALLA:
+- Combate 1 vs 1 por turnos.
+- Cada jugador tiene su equipo.
+- Gana quien derrote todos los Pokémon disponibles del rival.
+- El orden inicial se decide por coin flip.
+- Se puede atacar.
+- Se puede cambiar Pokémon.
+- Cambiar Pokémon consume el turno.
+- Si un Pokémon se retira, se eliminan sus efectos temporales.
+- No hay items.
+- No considerar clima, espinas, trampas, terreno ni cambios de campo.
+- Sí considerar estados básicos.
+
+ESTADOS BÁSICOS:
+Incluir:
+- Quemadura
+- Veneno
+- Sueño
+- Parálisis
+- Congelación
+- Confusión
+
+Reglas simplificadas:
+- Quemadura: daño al final del turno.
+- Veneno: daño al final del turno.
+- Sueño: probabilidad o contador para despertar.
+- Parálisis: probabilidad de no atacar.
+- Congelación: probabilidad de descongelarse.
+- Confusión: probabilidad de golpearse a sí mismo.
+
+ARCEUS TESTING MODE:
+Agregar una regla especial configurable:
+Si el Pokémon es Arceus, puede tener estadísticas infinitas de ataque, defensa y vida.
+Esto es para testing y gameplay interno.
+
+Debe existir una variable tipo:
+TESTING_GOD_MODE = true/false
+
+Si está activo:
+- Arceus no muere.
+- Arceus puede derrotar de un golpe.
+- Sirve para probar animaciones, turnos, estados y flujo de batalla.
+- Mostrar mensaje especial:
+“Arceus has entered the battlefield. Reality is no longer stable.”
+
+TROFEOS / EASTER EGGS:
+Después de que ambos jugadores seleccionen su equipo, mostrar mensajes durante 10 segundos si aplica.
+
+Si un jugador elige Pokémon de una sola generación:
+- Campeón de Kanto
+- Campeón de Johto
+- Campeón de Hoenn
+- Campeón de Sinnoh
+- Campeón de Teselia
+- Campeón de Kalos
+- Campeón de Alola
+- Campeón de Galar
+- Campeón de Paldea
+
+Easter egg especial:
+Si el jugador elige solo Pokémon de cuarta generación / Sinnoh, mostrar:
+“🏆 Campeón de Cultura”
+“Has elegido el camino correcto. Sinnoh aprueba tu equipo.”
+
+Si no hay sprites de trofeo disponibles, usar solo recuadro de texto estilo Nintendo DS.
+
+COIN FLIP:
+- Debe decidir quién inicia.
+- Inspirarse visualmente en una moneda estilo Pokémon TCG Pocket, pero NO copiar assets exactos.
+- Crear moneda pixel art propia.
+- Cara: Poké Ball.
+- Cruz: símbolo de Sinnoh, Master Ball o icono personalizado.
+- Animación de giro.
+- Sonido corto.
+- Mostrar resultado.
+
+ANIMACIONES DE ATAQUE:
+Crear sistema de animaciones basado en mapa de bits / sprites pixel art.
+Para MVP, cada tipo de movimiento puede tener una animación base:
+- Fuego: llama pixelada
+- Agua: ola o burbuja
+- Eléctrico: rayo
+- Planta: hojas
+- Hielo: cristales
+- Psíquico: ondas
+- Fantasma: sombra
+- Lucha: impacto físico
+- Dragón: aura
+- Tierra: sacudida
+- Roca: piedras
+- Veneno: nube tóxica
+- Normal: golpe básico
+- Siniestro: sombra cortante
+- Acero: impacto metálico
+- Hada: brillo
+- Bicho: enjambre
+- Volador: ráfaga de viento
+
+Después se pueden crear animaciones únicas para ataques legendarios:
+- Judgment
+- Roar of Time
+- Spacial Rend
+- Shadow Force
+- Close Combat
+- Thunderbolt
+- Flamethrower
+- Surf
+
+SONIDOS:
+Incluir sistema de sonidos:
+- Selección de menú
+- Confirmación
+- Coin flip
+- Ataque
+- Daño
+- Pokémon debilitado
+- Victoria
+- Easter egg
+- Música ambiental opcional
+
+Usar sonidos libres o creados para el proyecto. No usar sonidos oficiales directamente.
+
+DISEÑO VISUAL:
+Todo debe tener estética de Pokémon Platino / Nintendo DS:
+- Pixel art
+- Caja de texto inferior
+- Fondo de batalla tipo multijugador cuarta generación
+- Menús simples
+- Transiciones rápidas
+- Sprites en baja resolución
+- Layout tipo consola DS
+- UI nostálgica
+
+PANTALLAS PRINCIPALES:
+1. Champion Select
+2. Create / Join Room
+3. Lobby Waiting Room
+4. Ban Phase
+5. Random Fill Question
+6. Team Select
+7. Pre-Battle Awards
+8. Coin Flip
+9. Battle Room
+10. Result Screen
+
+ESTRUCTURA DE CARPETAS SUGERIDA:
+sinnoh-edition-pwc/
+│
+├── apps/
+│   ├── web/
+│   │   ├── src/
+│   │   │   ├── routes/
+│   │   │   ├── components/
+│   │   │   ├── features/
+│   │   │   │   ├── champion-select/
+│   │   │   │   ├── lobby/
+│   │   │   │   ├── ban-phase/
+│   │   │   │   ├── team-select/
+│   │   │   │   ├── pre-battle-awards/
+│   │   │   │   ├── coin-flip/
+│   │   │   │   ├── battle/
+│   │   │   │   └── results/
+│   │   │   ├── assets/
+│   │   │   │   ├── sprites/
+│   │   │   │   ├── trainers/
+│   │   │   │   ├── backgrounds/
+│   │   │   │   ├── sounds/
+│   │   │   │   └── animations/
+│   │   │   ├── styles/
+│   │   │   └── utils/
+│   │   └── package.json
+│   │
+│   └── api/
+│       ├── src/
+│       │   ├── routes/
+│       │   │   ├── pokemon.routes.ts
+│       │   │   ├── room.routes.ts
+│       │   │   ├── battle.routes.ts
+│       │   │   ├── trainer.routes.ts
+│       │   │   └── cache.routes.ts
+│       │   ├── services/
+│       │   │   ├── pokeapi.service.ts
+│       │   │   ├── cache.service.ts
+│       │   │   ├── room.service.ts
+│       │   │   ├── trainer.service.ts
+│       │   │   └── battle.service.ts
+│       │   └── index.ts
+│       └── package.json
+│
+├── packages/
+│   ├── shared/
+│   │   ├── types/
+│   │   ├── constants/
+│   │   └── schemas/
+│   │
+│   ├── battle-engine/
+│   │   ├── turn-manager.ts
+│   │   ├── damage-calculator.ts
+│   │   ├── status-effects.ts
+│   │   ├── switch-rules.ts
+│   │   ├── win-condition.ts
+│   │   └── random-move-selector.ts
+│   │
+│   └── pokemon-cache/
+│       ├── cache-schema.ts
+│       ├── seed-pokemon.ts
+│       ├── generation-mapper.ts
+│       └── sprite-resolver.ts
+│
+├── docs/
+│   ├── project-scope.md
+│   ├── game-rules.md
+│   ├── technical-architecture.md
+│   ├── cache-strategy.md
+│   ├── ui-flow.md
+│   └── presentation-notes.md
+│
+└── README.md
+
+TIPOS BASE SUGERIDOS:
+Define modelos TypeScript para:
+- Player
+- Champion
+- Room
+- RoomStatus
+- BattlePokemon
+- Move
+- PokemonType
+- StatusEffect
+- BattleAction
+- BattleLogEntry
+- CachePokemon
+- GenerationTrophy
+
+NO PROGRAMAR TODO DE GOLPE:
+Primero quiero que me entregues:
+1. Resumen ejecutivo del proyecto.
+2. Alcance MVP.
+3. Alcance avanzado.
+4. Arquitectura técnica.
+5. Flujo de pantallas.
+6. Reglas de gameplay.
+7. Estrategia de caché.
+8. Modelos de datos.
+9. Estructura de carpetas.
+10. Roadmap por fases.
+11. Riesgos técnicos y cómo mitigarlos.
+12. Recomendaciones de implementación.
+
+Mantén el tono técnico pero claro, como documentación para un proyecto universitario avanzado. No generes código completo todavía, solo estructura, diseño técnico y planificación.

@@ -433,7 +433,7 @@ function RootLayout({ children, cart }: { children: React.ReactNode; cart: Store
       {children}
       <footer className="footer">
         <div className="container">
-          <p>UrbanSprout · by Los Extraditables 😈 NJA</p>
+          <p>UrbanSprout · by Los Extraditables 😈 NJA V.1.0.0.0</p>
         </div>
       </footer>
     </>
@@ -1101,7 +1101,7 @@ function AppWithoutClerk() {
       </Routes>
       <footer className="footer">
         <div className="container">
-          <p>UrbanSprout · by Los Extraditables 😈 NJA</p>
+          <p>UrbanSprout · by Los Extraditables 😈 NJA V.1.0.0.0</p>
         </div>
       </footer>
     </>
