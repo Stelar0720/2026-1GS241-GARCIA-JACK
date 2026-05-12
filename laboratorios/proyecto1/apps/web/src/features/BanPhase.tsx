@@ -1,72 +1,52 @@
-// Sinnoh Edition - Ban Phase Screen
+// Sinnoh Edition - Ban Phase Screen with WebSocket
 import { useState, useEffect } from 'preact/hooks';
-import type { Player, Room } from '../../App';
-import { fetchPokemon, CONFIG, banPokemon, shuffleArray } from '../lib/api';
+import type { Player, Room } from '../App';
+import { fetchPokemon } from '../lib/api';
 
 interface BanPhaseProps {
   player: Player;
   room: Room;
   bannedPokemon: string[];
+  onBan: (pokemonId: string) => void;
   onBanComplete: () => void;
 }
 
-interface PokemonOption {
-  id: number;
-  name: string;
-  spriteUrl: string;
-  banned: boolean;
-}
-
-export function BanPhase({ player, room, bannedPokemon, onBanComplete }: BanPhaseProps) {
-  const [pokemons, setPokemons] = useState<PokemonOption[]>([]);
+export function BanPhase({ player: _player, room: _room, bannedPokemon, onBan, onBanComplete }: BanPhaseProps) {
+  const [pokemons, setPokemons] = useState<any[]>([]);
   const [myBans, setMyBans] = useState<string[]>([]);
-  const [opponentBans, setOpponentBans] = useState<string[]>([]);
-  const [turn, setTurn] = useState<'ban' | 'select'>('ban');
-  const [maxBans] = useState(3);
+  const [loading, setLoading] = useState(true);
+  const maxBans = 3;
 
-  // Load initial pokemons
   useEffect(() => {
     const loadPokemons = async () => {
-      // Load Sinnoh (gen 4) pokemons for demo
+      // Load Sinnoh pokemons for demo
       const gen4Ids = Array.from({ length: 50 }, (_, i) => i + 387);
       const loaded = await Promise.all(
         gen4Ids.map(async (id) => {
-          const data = await fetchPokemon(id).catch(() => null);
-          if (!data) return null;
-          return {
-            id: data.id,
-            name: data.name,
-            spriteUrl: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`,
-            banned: bannedPokemon.includes(id.toString()),
-          };
+          try {
+            const data = await fetchPokemon(id);
+            return data;
+          } catch {
+            return null;
+          }
         })
       );
-      setPokemons(loaded.filter(Boolean) as PokemonOption[]);
+      setPokemons(loaded.filter(Boolean));
+      setLoading(false);
     };
     loadPokemons();
   }, []);
 
   const handleBan = (pokemonId: string) => {
     if (myBans.length >= maxBans) return;
-    if (myBans.includes(pokemonId)) return;
+    if (bannedPokemon.includes(pokemonId)) return;
 
-    const newMyBans = [...myBans, pokemonId];
-    setMyBans(newMyBans);
-    
-    // Update cache
-    banPokemon(room.id, pokemonId);
-    
-    // Check if ban phase complete
-    if (newMyBans.length >= maxBans) {
-      setTurn('select');
-    }
+    setMyBans([...myBans, pokemonId]);
+    onBan(pokemonId);
   };
 
-  const handleContinue = () => {
-    if (myBans.length >= maxBans) {
-      onBanComplete();
-    }
-  };
+  // Auto advance when both players have banned
+  const totalBans = [...new Set([...bannedPokemon, ...myBans])].length;
 
   return (
     <div class="screen ban-phase">
@@ -90,59 +70,77 @@ export function BanPhase({ player, room, bannedPokemon, onBanComplete }: BanPhas
                     color: myBans[i] ? '#c03030' : '#4a4a8a'
                   }}
                 >
-                  {myBans[i] ? 'X' : ''}
+                  {myBans[i] ? '✕' : ''}
                 </div>
               ))}
             </div>
           </div>
           
           <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: '9px', color: '#a8a8c8' }}>FASE</span>
-            <p style={{ fontSize: '10px', color: '#e0c030' }}>
-              {turn === 'ban' ? 'BANS' : 'SELECCIÓN'}
-            </p>
+            <span style={{ fontSize: '9px', color: '#a8a8c8' }}>BANS TOTALES</span>
+            <p style={{ fontSize: '14px', color: '#e0c030' }}>{totalBans}/6</p>
           </div>
         </div>
 
         <div class="ds-textbox" style={{ marginBottom: '16px' }}>
           <p style={{ fontSize: '10px', textAlign: 'center' }}>
-            {turn === 'ban' 
-              ? `Banea ${maxBans - myBans.length} Pokémon para tu oponente`
-              : '¿Listo para continuar?'
-            }
+            Banea {maxBans - myBans.length} Pokémon ({totalBans} baneados en total)
           </p>
         </div>
 
-        <div class="pokemon-grid" style={{ maxHeight: '300px' }}>
-          {pokemons.map((pokemon) => (
-            <div
-              key={pokemon.id}
-              class={`pokemon-card ${pokemon.banned || myBans.includes(pokemon.id.toString()) ? 'selected' : ''}`}
-              onClick={() => !pokemon.banned && turn === 'ban' && handleBan(pokemon.id.toString())}
-              style={{ 
-                opacity: pokemon.banned || myBans.includes(pokemon.id.toString()) ? 0.5 : 1,
-                borderColor: myBans.includes(pokemon.id.toString()) ? '#c03030' : undefined
-              }}
-            >
-              <img 
-                src={pokemon.spriteUrl} 
-                alt={pokemon.name}
-                class="pokemon-sprite"
-              />
-              <p class="pokemon-name">{pokemon.name}</p>
-            </div>
-          ))}
-        </div>
+        {loading ? (
+          <div class="loading" style={{ textAlign: 'center', padding: '40px' }}>
+            Cargando Pokémon...
+          </div>
+        ) : (
+          <div class="pokemon-grid" style={{ maxHeight: '300px' }}>
+            {pokemons.map((pokemon) => {
+              const isBanned = bannedPokemon.includes(pokemon.id.toString()) || myBans.includes(pokemon.id.toString());
+              return (
+                <div
+                  key={pokemon.id}
+                  class="pokemon-card"
+                  onClick={() => !isBanned && handleBan(pokemon.id.toString())}
+                  style={{ 
+                    opacity: isBanned ? 0.5 : 1,
+                    borderColor: myBans.includes(pokemon.id.toString()) ? '#c03030' : 
+                               bannedPokemon.includes(pokemon.id.toString()) ? '#705898' : undefined,
+                    cursor: isBanned ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <img 
+                    src={pokemon.spriteFront} 
+                    alt={pokemon.name}
+                    class="pokemon-sprite"
+                  />
+                  <p class="pokemon-name">{pokemon.name}</p>
+                  {isBanned && (
+                    <span style={{ 
+                      fontSize: '7px', 
+                      color: '#c03030',
+                      background: '#1a1a2e',
+                      padding: '2px 4px',
+                      borderRadius: '2px',
+                      marginTop: '4px'
+                    }}>
+                      BANEADO
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div class="nav-buttons">
-          {turn === 'ban' && myBans.length >= maxBans && (
-            <button class="ds-button gold" onClick={handleContinue}>
-              CONTINUAR
+          {totalBans >= 6 && (
+            <button class="ds-button gold" onClick={onBanComplete}>
+              CONTINUAR A SELECCIÓN
             </button>
           )}
-          {turn === 'ban' && myBans.length < maxBans && (
-            <div class="loading" style={{ padding: '12px', fontSize: '9px' }}>
-              Esperando... ({myBans.length}/{maxBans})
+          {totalBans < 6 && (
+            <div style={{ padding: '12px', color: '#a8a8c8', fontSize: '9px' }}>
+              Esperando a que el otro jugador complete sus bans...
             </div>
           )}
         </div>

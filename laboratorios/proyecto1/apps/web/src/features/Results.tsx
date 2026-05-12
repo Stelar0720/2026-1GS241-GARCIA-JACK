@@ -1,5 +1,5 @@
 // Sinnoh Edition - Results Screen
-import type { Player } from '../../App';
+import type { Player } from '../App';
 
 interface ResultsProps {
   player: Player | null;
@@ -98,7 +98,7 @@ export function Results({ player, playerTeam, opponentTeam, onPlayAgain }: Resul
             borderColor: '#e0c030',
             marginBottom: '20px'
           }}>
-            <p style={{ fontSize: '12px' }}>🏆 {getTrophyMessage(playerTeam)}</p>
+            <p style={{ fontSize: '12px' }}>🏆 {getTrophyMessage()}</p>
           </div>
         )}
 
@@ -122,6 +122,6 @@ function checkTrophy(team: any[]): boolean {
   return team.every(p => p.id >= 387 && p.id <= 493);
 }
 
-function getTrophyMessage(team: any[]): string {
+function getTrophyMessage(): string {
   return 'Campeón de Cultura\nHas elegido el camino correcto. Sinnoh aprueba tu equipo.';
 }

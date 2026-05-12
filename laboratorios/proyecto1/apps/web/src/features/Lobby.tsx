@@ -1,64 +1,33 @@
-// Sinnoh Edition - Lobby Screen
+// Sinnoh Edition - Lobby Screen with WebSocket
 import { useState } from 'preact/hooks';
-import type { Player, Room } from '../../App';
-import { createRoom, joinRoom } from '../lib/api';
+import type { Player, Room } from '../App';
 
 interface LobbyProps {
   player: Player;
   room: Room | null;
-  onCreateRoom: (room: Room) => void;
-  onJoinRoom: (room: Room) => void;
+  opponent: Player | null;
+  isOpponentReady: boolean;
+  onCreateRoom: () => void;
+  onJoinRoom: (code: string) => void;
+  onReady: () => void;
   onStartBan: () => void;
-  bannedPokemon: string[];
-  onBannedChange: (banned: string[]) => void;
+  isConnected: boolean;
 }
 
-export function Lobby({ player, room, onCreateRoom, onJoinRoom, onStartBan, bannedPokemon, onBannedChange }: LobbyProps) {
+export function Lobby({ player, room, opponent, isOpponentReady, onCreateRoom, onJoinRoom, onReady, onStartBan, isConnected }: LobbyProps) {
   const [mode, setMode] = useState<'select' | 'create' | 'join'>('select');
   const [joinCode, setJoinCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
-  const handleCreateRoom = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await createRoom(player.id);
-      if (result.success) {
-        onCreateRoom({
-          id: result.roomId,
-          code: result.code,
-          opponent: null,
-          status: 'waiting',
-        });
-      }
-    } catch (e) {
-      setError('Error al crear sala');
+  const handleJoinRoom = () => {
+    if (joinCode.length === 6) {
+      onJoinRoom(joinCode.toUpperCase());
     }
-    setLoading(false);
   };
 
-  const handleJoinRoom = async () => {
-    if (joinCode.length !== 6) {
-      setError('Código inválido');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await joinRoom(joinCode.toUpperCase(), player.id);
-      if (result.success) {
-        onJoinRoom({
-          id: result.roomId,
-          code: joinCode.toUpperCase(),
-          opponent: result.players?.[1] || 'Oponente',
-          status: result.status,
-        });
-      }
-    } catch (e) {
-      setError('No se pudo unir a la sala');
-    }
-    setLoading(false);
+  const handleReady = () => {
+    setIsReady(true);
+    onReady();
   };
 
   return (
@@ -68,16 +37,32 @@ export function Lobby({ player, room, onCreateRoom, onJoinRoom, onStartBan, bann
           LOBBY
         </h2>
 
+        {!isConnected && (
+          <div class="ds-textbox" style={{ background: '#3a2020', borderColor: '#c03030', marginBottom: '16px' }}>
+            <p style={{ textAlign: 'center', color: '#c03030' }}>
+              ⚠️ No conectado al servidor. Esperando...
+            </p>
+          </div>
+        )}
+
         {!room && mode === 'select' && (
           <div class="ds-textbox">
             <p style={{ textAlign: 'center', marginBottom: '20px' }}>
               ¿Qué deseas hacer?
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <button class="ds-button gold" onClick={handleCreateRoom}>
+              <button 
+                class="ds-button gold" 
+                onClick={() => onCreateRoom()}
+                disabled={!isConnected}
+              >
                 CREAR SALA
               </button>
-              <button class="ds-button" onClick={() => setMode('join')}>
+              <button 
+                class="ds-button" 
+                onClick={() => setMode('join')}
+                disabled={!isConnected}
+              >
                 UNIRSE A SALA
               </button>
             </div>
@@ -101,9 +86,8 @@ export function Lobby({ player, room, onCreateRoom, onJoinRoom, onStartBan, bann
                 marginBottom: '16px'
               }}
             />
-            {error && <p style={{ color: '#c03030', marginBottom: '12px' }}>{error}</p>}
             <div class="nav-buttons">
-              <button class="ds-button" onClick={() => { setMode('select'); setError(null); }}>
+              <button class="ds-button" onClick={() => setMode('select')}>
                 ATRÁS
               </button>
               <button 
@@ -128,7 +112,8 @@ export function Lobby({ player, room, onCreateRoom, onJoinRoom, onStartBan, bann
                 <div style={{ 
                   background: '#2a2a4a', 
                   padding: '12px',
-                  borderRadius: '4px'
+                  borderRadius: '4px',
+                  border: isReady ? '2px solid #78c850' : '2px solid #4a4a8a'
                 }}>
                   <img 
                     src={player.spriteUrl} 
@@ -136,6 +121,7 @@ export function Lobby({ player, room, onCreateRoom, onJoinRoom, onStartBan, bann
                     style={{ width: '48px', height: '48px', imageRendering: 'pixelated' }}
                   />
                   <p style={{ fontSize: '9px', marginTop: '4px' }}>{player.name}</p>
+                  {isReady && <p style={{ fontSize: '8px', color: '#78c850' }}>✓ LISTO</p>}
                 </div>
               </div>
               
@@ -146,23 +132,46 @@ export function Lobby({ player, room, onCreateRoom, onJoinRoom, onStartBan, bann
               }}>VS</div>
               
               <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: '9px', marginBottom: '8px', color: '#a8a8c8' }}>ESPERANDO...</p>
+                <p style={{ fontSize: '9px', marginBottom: '8px', color: '#a8a8c8' }}>
+                  {opponent ? 'OPONENTE' : 'ESPERANDO...'}
+                </p>
                 <div style={{ 
                   background: '#2a2a4a', 
                   padding: '12px',
                   borderRadius: '4px',
                   minWidth: '80px',
-                  minHeight: '80px'
+                  minHeight: '80px',
+                  border: isOpponentReady ? '2px solid #78c850' : '2px solid #4a4a8a'
                 }}>
-                  <div class="loading" style={{ fontSize: '24px' }}>?</div>
+                  {opponent ? (
+                    <>
+                      <img 
+                        src={opponent.spriteUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/trainer/ Lucas.png'} 
+                        alt="Opponent"
+                        style={{ width: '48px', height: '48px', imageRendering: 'pixelated' }}
+                      />
+                      <p style={{ fontSize: '9px', marginTop: '4px' }}>{opponent.name}</p>
+                      {isOpponentReady && <p style={{ fontSize: '8px', color: '#78c850' }}>✓ LISTO</p>}
+                    </>
+                  ) : (
+                    <div class="loading" style={{ fontSize: '24px', lineHeight: '80px' }}>?</div>
+                  )}
                 </div>
               </div>
             </div>
 
             <div class="nav-buttons">
-              {room.status === 'waiting' ? (
+              {!opponent ? (
                 <div class="loading" style={{ padding: '12px' }}>
                   Esperando oponente...
+                </div>
+              ) : !isReady ? (
+                <button class="ds-button gold" onClick={handleReady}>
+                  ESTOY LISTO
+                </button>
+              ) : !isOpponentReady ? (
+                <div style={{ padding: '12px', color: '#a8a8c8' }}>
+                  Esperando que tu oponente esté listo...
                 </div>
               ) : (
                 <button class="ds-button gold" onClick={onStartBan}>

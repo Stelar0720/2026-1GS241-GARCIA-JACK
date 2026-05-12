@@ -1,6 +1,6 @@
-// Sinnoh Edition - Team Select Screen
+// Sinnoh Edition - Team Select Screen with WebSocket
 import { useState, useEffect } from 'preact/hooks';
-import type { Player } from '../../App';
+import type { Player } from '../App';
 import { fetchPokemon, shuffleArray, selectRandomMoves, CONFIG } from '../lib/api';
 
 interface TeamSelectProps {
@@ -19,25 +19,21 @@ interface PokemonData {
   stats: any;
 }
 
-export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelectProps) {
+export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: TeamSelectProps) {
   const [pokemons, setPokemons] = useState<PokemonData[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
-  const [useRandomFill, setUseRandomFill] = useState(false);
   const [showFillQuestion, setShowFillQuestion] = useState(true);
   const [timeLeft, setTimeLeft] = useState(CONFIG.GAME_CONFIG.TEAM_TIMEOUT);
   const [loading, setLoading] = useState(true);
 
-  // Load pokemons
   useEffect(() => {
     const loadPokemons = async () => {
-      // Load first 100 pokemons for selection
       const ids = Array.from({ length: 100 }, (_, i) => i + 1);
       const loaded = await Promise.all(
         ids.map(async (id) => {
           if (bannedPokemon.includes(id.toString())) return null;
           try {
-            const data = await fetchPokemon(id);
-            return data;
+            return await fetchPokemon(id);
           } catch {
             return null;
           }
@@ -49,7 +45,6 @@ export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelect
     loadPokemons();
   }, [bannedPokemon]);
 
-  // Timer
   useEffect(() => {
     if (showFillQuestion || selected.length === 0) return;
     
@@ -90,7 +85,6 @@ export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelect
       const pokemon = pokemons.find(p => p.id === id);
       if (!pokemon) return null;
       
-      // Assign 4 random moves
       const moves = selectRandomMoves(pokemon.moves || [], 4);
       
       return {
@@ -119,19 +113,16 @@ export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelect
           <h2 style={{ fontSize: '12px', color: '#e0c030' }}>SELECCIÓN DE EQUIPO</h2>
           <div style={{ textAlign: 'right' }}>
             <span style={{ fontSize: '8px', color: '#a8a8c8' }}>TIEMPO</span>
-            <p style={{ 
-              fontSize: '14px', 
-              color: timeLeft < 10 ? '#c03030' : '#e0c030' 
-            }}>
+            <p style={{ fontSize: '14px', color: timeLeft < 10 ? '#c03030' : '#e0c030' }}>
               {timeLeft}s
             </p>
           </div>
         </div>
 
-        {/* Team Preview */}
         <div class="team-panel">
           {Array.from({ length: 6 }, (_, i) => {
-            const pokemon = pokemons.find(p => selected.includes(p.id));
+            const pokemonId = selected[i];
+            const pokemon = pokemonId ? pokemons.find(p => p.id === pokemonId) : null;
             return (
               <div 
                 key={i}
@@ -154,7 +145,6 @@ export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelect
           {selected.length}/{CONFIG.GAME_CONFIG.MAX_POKEMON} Pokémon seleccionados
         </p>
 
-        {/* Fill Question */}
         {showFillQuestion && selected.length > 0 && selected.length < CONFIG.GAME_CONFIG.MAX_POKEMON && (
           <div class="ds-textbox" style={{ marginBottom: '16px' }}>
             <p style={{ fontSize: '9px', textAlign: 'center', marginBottom: '12px' }}>
@@ -171,8 +161,7 @@ export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelect
           </div>
         )}
 
-        {/* Pokemon Grid */}
-        {!loading && (
+        {!loading ? (
           <div class="pokemon-grid" style={{ maxHeight: '250px' }}>
             {pokemons.map((pokemon) => (
               <div
@@ -180,17 +169,13 @@ export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelect
                 class={`pokemon-card ${selected.includes(pokemon.id) ? 'selected' : ''}`}
                 onClick={() => togglePokemon(pokemon.id)}
               >
-                <img 
-                  src={pokemon.spriteFront} 
-                  alt={pokemon.name}
-                  class="pokemon-sprite"
-                />
+                <img src={pokemon.spriteFront} alt={pokemon.name} class="pokemon-sprite" />
                 <p class="pokemon-name">{pokemon.name}</p>
                 <div class="pokemon-types">
                   {pokemon.types.map((type: string) => (
                     <span 
                       key={type}
-                      class={`type-badge type-${type}`}
+                      class="type-badge"
                       style={{ background: getTypeColor(type) }}
                     >
                       {type.substring(0, 3).toUpperCase()}
@@ -200,15 +185,12 @@ export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelect
               </div>
             ))}
           </div>
-        )}
-
-        {loading && (
+        ) : (
           <div class="loading" style={{ textAlign: 'center', padding: '40px' }}>
             Cargando Pokémon...
           </div>
         )}
 
-        {/* Actions */}
         <div class="nav-buttons">
           <button 
             class="ds-button"
@@ -222,7 +204,7 @@ export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelect
             onClick={handleStartBattle}
             disabled={selected.length < CONFIG.GAME_CONFIG.MIN_POKEMON}
           >
-            INICIAR BATALLA
+            LISTO
           </button>
         </div>
       </div>
@@ -232,24 +214,11 @@ export function TeamSelect({ player, bannedPokemon, onTeamComplete }: TeamSelect
 
 function getTypeColor(type: string): string {
   const colors: Record<string, string> = {
-    normal: '#A8A878',
-    fire: '#F08030',
-    water: '#6890F0',
-    electric: '#F8D030',
-    grass: '#78C850',
-    ice: '#98D8D8',
-    fighting: '#C03028',
-    poison: '#A040A0',
-    ground: '#E0C068',
-    flying: '#A890F0',
-    psychic: '#F85888',
-    bug: '#A8B820',
-    rock: '#B8A038',
-    ghost: '#705898',
-    dragon: '#7038F8',
-    dark: '#705848',
-    steel: '#B8B8D0',
-    fairy: '#EE99AC',
+    normal: '#A8A878', fire: '#F08030', water: '#6890F0', electric: '#F8D030',
+    grass: '#78C850', ice: '#98D8D8', fighting: '#C03028', poison: '#A040A0',
+    ground: '#E0C068', flying: '#A890F0', psychic: '#F85888', bug: '#A8B820',
+    rock: '#B8A038', ghost: '#705898', dragon: '#7038F8', dark: '#705848',
+    steel: '#B8B8D0', fairy: '#EE99AC',
   };
   return colors[type] || colors.normal;
 }

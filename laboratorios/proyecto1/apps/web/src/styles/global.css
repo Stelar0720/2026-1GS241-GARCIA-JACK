@@ -399,3 +399,261 @@ body {
 .status-paralyzed { background: #f8d030; }
 .status-frozen { background: #98d8d8; color: #1a1a2e; }
 .status-confused { background: #705848; }
+
+/* ========== SINNOH EDITION STYLES ========== */
+
+/* Pre-Battle Awards */
+.pre-battle-awards {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(26, 26, 46, 0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: awardsFadeIn 0.5s ease-out;
+}
+
+@keyframes awardsFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.trophy-display {
+  text-align: center;
+  padding: 40px;
+}
+
+.trophy-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  animation: trophyBounce 1s ease-out;
+}
+
+@keyframes trophyBounce {
+  0% { transform: scale(0) rotate(-20deg); }
+  50% { transform: scale(1.2) rotate(10deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+.trophy-title {
+  font-size: 18px;
+  color: #e0c030;
+  margin-bottom: 16px;
+  text-shadow: 2px 2px 0 #1a1a2e;
+}
+
+.trophy-message {
+  font-size: 10px;
+  color: #a8a8c8;
+  line-height: 2;
+  max-width: 400px;
+}
+
+/* Animations by Type */
+.attack-animation {
+  position: absolute;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.anim-fire {
+  background: radial-gradient(circle, #f08030 0%, transparent 70%);
+  width: 100px;
+  height: 100px;
+  animation: fireBlast 0.6s ease-out forwards;
+}
+
+@keyframes fireBlast {
+  0% { transform: scale(0); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.8; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.anim-water {
+  background: radial-gradient(circle, #6890f0 0%, transparent 70%);
+  width: 100px;
+  height: 100px;
+  animation: waterBlast 0.6s ease-out forwards;
+}
+
+@keyframes waterBlast {
+  0% { transform: scale(0); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.8; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.anim-electric {
+  background: radial-gradient(circle, #f8d030 0%, transparent 70%);
+  width: 100px;
+  height: 100px;
+  animation: electricBlast 0.4s ease-out forwards;
+}
+
+@keyframes electricBlast {
+  0%, 20%, 40%, 60%, 80%, 100% { transform: scale(1); opacity: 1; }
+  10%, 30%, 50%, 70%, 90% { transform: scale(0.8); opacity: 0.5; }
+}
+
+.anim-psychic {
+  background: radial-gradient(circle, #f85888 0%, transparent 70%);
+  width: 120px;
+  height: 120px;
+  animation: psychicBlast 0.8s ease-in-out forwards;
+}
+
+@keyframes psychicBlast {
+  0% { transform: scale(0) rotate(0deg); opacity: 1; }
+  50% { transform: scale(1.5) rotate(180deg); opacity: 0.8; }
+  100% { transform: scale(2) rotate(360deg); opacity: 0; }
+}
+
+.anim-ghost {
+  background: radial-gradient(circle, #705898 0%, transparent 70%);
+  width: 80px;
+  height: 80px;
+  animation: ghostBlast 0.7s ease-in-out forwards;
+}
+
+@keyframes ghostBlast {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-50px) scale(1.5); opacity: 0; }
+}
+
+/* Damage Popup */
+.damage-popup {
+  position: absolute;
+  font-size: 14px;
+  font-weight: bold;
+  color: #f8d030;
+  text-shadow: 2px 2px 0 #1a1a2e;
+  pointer-events: none;
+  animation: damageFloat 1s ease-out forwards;
+}
+
+.critical-hit {
+  color: #ff6600;
+  font-size: 16px;
+}
+
+@keyframes damageFloat {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-40px); opacity: 0; }
+}
+
+/* God Mode Indicator */
+.god-mode-indicator {
+  position: fixed;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, #1a1a2e 0%, #4a3a5a 50%, #1a1a2e 100%);
+  border: 2px solid #9d00ff;
+  padding: 8px 16px;
+  font-size: 8px;
+  color: #9d00ff;
+  text-transform: uppercase;
+  z-index: 999;
+  animation: godModePulse 2s infinite;
+}
+
+@keyframes godModePulse {
+  0%, 100% { box-shadow: 0 0 10px #9d00ff; }
+  50% { box-shadow: 0 0 20px #9d00ff, 0 0 30px #9d00ff; }
+}
+
+/* Results Screen */
+.results-screen {
+  text-align: center;
+}
+
+.results-winner {
+  font-size: 20px;
+  color: #e0c030;
+  margin-bottom: 20px;
+}
+
+.results-loser {
+  font-size: 12px;
+  color: #a8a8c8;
+  margin-bottom: 30px;
+}
+
+.results-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.summary-section {
+  background: var(--bg-primary);
+  padding: 16px;
+  border: 2px solid var(--ds-light);
+}
+
+.summary-title {
+  font-size: 9px;
+  color: var(--ds-text);
+  margin-bottom: 12px;
+}
+
+/* Loading States */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(26, 26, 46, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid var(--ds-light);
+  border-top-color: var(--ds-gold);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .app-container {
+    padding: 12px;
+  }
+  
+  .ds-panel {
+    padding: 12px;
+  }
+  
+  .pokemon-grid {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 8px;
+  }
+  
+  .app-title {
+    font-size: 16px;
+  }
+  
+  .nav-buttons {
+    flex-direction: column;
+  }
+  
+  .ds-button {
+    width: 100%;
+  }
+}

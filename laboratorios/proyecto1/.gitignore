@@ -11,6 +11,9 @@ dist/
 apps/*/dist/
 packages/*/dist/
 
+# Runtime data
+apps/api/data/
+
 # Logs
 *.log
 *.err.log

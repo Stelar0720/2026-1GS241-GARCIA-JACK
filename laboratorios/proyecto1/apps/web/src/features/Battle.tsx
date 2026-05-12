@@ -1,12 +1,14 @@
-// Sinnoh Edition - Battle Screen
+// Sinnoh Edition - Battle Screen with WebSocket
 import { useState, useEffect } from 'preact/hooks';
-import type { Player } from '../../App';
+import type { Player } from '../App';
 
 interface BattleProps {
   player: Player;
   playerTeam: any[];
   opponentTeam: any[];
   onBattleEnd: () => void;
+  onAttack?: (action: string, data: any) => void;
+  onSwitch?: (pokemonId: number) => void;
 }
 
 interface BattlePokemon {
@@ -18,12 +20,18 @@ interface BattlePokemon {
   currentHp: number;
   maxHp: number;
   moves: any[];
+  stats: {
+    hp: number;
+    attack: number;
+    defense: number;
+    speed: number;
+  };
   status: string;
   isActive: boolean;
   isFainted: boolean;
 }
 
-export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: BattleProps) {
+export function Battle({ player: _player, playerTeam, opponentTeam, onBattleEnd, onAttack, onSwitch: _onSwitch }: BattleProps) {
   const [playerPokemons, setPlayerPokemons] = useState<BattlePokemon[]>([]);
   const [opponentPokemons, setOpponentPokemons] = useState<BattlePokemon[]>([]);
   const [currentPlayerPokemon, setCurrentPlayerPokemon] = useState<BattlePokemon | null>(null);
@@ -33,20 +41,15 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
   const [winner, setWinner] = useState<string | null>(null);
   const [actionLog, setActionLog] = useState<string>('');
   const [showMoveMenu, setShowMoveMenu] = useState(false);
+  const [isMyTurn, setIsMyTurn] = useState(true);
 
   // Initialize battle
   useEffect(() => {
-    if (playerTeam.length === 0 || opponentTeam.length === 0) {
-      // Create mock teams if empty
-      const mockPlayerTeam = createMockTeam(1);
-      const mockOpponentTeam = createMockTeam(2);
-      
-      setPlayerPokemons(mockPlayerTeam.map((p, i) => ({ ...p, isActive: i === 0 })));
-      setOpponentPokemons(mockOpponentTeam.map((p, i) => ({ ...p, isActive: i === 0 })));
-    } else {
-      setPlayerPokemons(playerTeam.map((p, i) => ({ ...p, isActive: i === 0 })));
-      setOpponentPokemons(opponentTeam.map((p, i) => ({ ...p, isActive: i === 0 })));
-    }
+    const team = playerTeam.length > 0 ? playerTeam : createMockTeam(1);
+    const oppTeam = opponentTeam.length > 0 ? opponentTeam : createMockTeam(2);
+    
+    setPlayerPokemons(team.map((p: any, i: number) => ({ ...p, isActive: i === 0 })));
+    setOpponentPokemons(oppTeam.map((p: any, i: number) => ({ ...p, isActive: i === 0 })));
   }, [playerTeam, opponentTeam]);
 
   useEffect(() => {
@@ -83,7 +86,7 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
   };
 
   const performAttack = (moveIndex: number) => {
-    if (!currentPlayerPokemon || !currentOpponentPokemon || gameOver) return;
+    if (!currentPlayerPokemon || !currentOpponentPokemon || gameOver || !isMyTurn) return;
 
     const move = currentPlayerPokemon.moves[moveIndex];
     if (!move || move.pp <= 0) return;
@@ -93,13 +96,8 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
 
     addLog(`${currentPlayerPokemon.name} usó ${move.name}!`);
 
-    if (damage.isCritical) {
-      addLog('¡Golpe crítico!');
-    }
-
-    if (damage.effectiveness === 'super-effective') {
-      addLog('¡Super efectivo!');
-    }
+    if (damage.isCritical) addLog('¡Golpe crítico!');
+    if (damage.effectiveness === 'super-effective') addLog('¡Super efectivo!');
 
     // Update opponent pokemon
     const updatedOpponent = {
@@ -112,12 +110,14 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
       p.isActive ? updatedOpponent : p
     );
 
-    if (newHp <= 0) {
-      addLog(`${currentOpponentPokemon.name} se debilitó!`);
-    }
+    if (newHp <= 0) addLog(`${currentOpponentPokemon.name} se debilitó!`);
 
     setOpponentPokemons(updatedOpponentTeam);
     setShowMoveMenu(false);
+    setIsMyTurn(false);
+
+    // Send action to opponent via WebSocket
+    onAttack?.('attack', { moveIndex, damage: damage.damage });
 
     // Check win
     if (updatedOpponentTeam.every(p => p.isFainted)) {
@@ -128,18 +128,16 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
       return;
     }
 
-    // Opponent turn
-    setTimeout(() => opponentAttack(updatedOpponentTeam), 1000);
+    // Opponent turn after delay
+    setTimeout(() => opponentAttack(updatedOpponentTeam), 1500);
   };
 
   const opponentAttack = (currentTeam: BattlePokemon[]) => {
     const opponent = currentTeam.find(p => p.isActive);
     if (!opponent) return;
 
-    // Simple AI: random move
     const availableMoves = opponent.moves.filter((m: any) => m.pp > 0);
     const move = availableMoves[Math.floor(Math.random() * availableMoves.length)];
-    
     if (!move) return;
 
     const playerActive = playerPokemons.find(p => p.isActive);
@@ -149,35 +147,31 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
     const newHp = Math.max(0, playerActive.currentHp - damage.damage);
 
     addLog(`${opponent.name} usó ${move.name}!`);
+    if (damage.effectiveness === 'super-effective') addLog('¡Super efectivo!');
 
-    if (damage.effectiveness === 'super-effective') {
-      addLog('¡Super efectivo!');
-    }
-
-    const updatedPlayerTeam = playerPokemons.map(p => 
+    let updatedPlayerTeam = playerPokemons.map(p => 
       p.isActive ? { ...p, currentHp: newHp, isFainted: newHp <= 0 } : p
     );
 
     if (newHp <= 0) {
       addLog(`${playerActive.name} se debilitó!`);
       
-      // Auto switch
       const nextAvailable = updatedPlayerTeam.find(p => !p.isFainted);
       if (nextAvailable) {
-        const switchedTeam = updatedPlayerTeam.map(p => ({
+        updatedPlayerTeam = updatedPlayerTeam.map(p => ({
           ...p,
           isActive: p.id === nextAvailable.id,
         }));
-        setPlayerPokemons(switchedTeam);
+        setPlayerPokemons(updatedPlayerTeam);
         addLog(`¡Ve! ${nextAvailable.name}!`);
         
-        if (switchedTeam.every(p => p.isFainted)) {
+        if (updatedPlayerTeam.every(p => p.isFainted)) {
           setGameOver(true);
           setWinner('opponent');
           addLog('Derrota...');
           setTimeout(onBattleEnd, 2000);
+          return;
         }
-        return;
       }
     } else {
       setPlayerPokemons(updatedPlayerTeam);
@@ -189,6 +183,8 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
       addLog('Derrota...');
       setTimeout(onBattleEnd, 2000);
     }
+
+    setIsMyTurn(true);
   };
 
   const calculateDamage = (attacker: BattlePokemon, defender: BattlePokemon, move: any) => {
@@ -201,8 +197,6 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
     const random = 0.85 + Math.random() * 0.15;
     const isCritical = Math.random() < 0.0625;
     const critMultiplier = isCritical ? 1.5 : 1;
-    
-    // Simple STAB and type effectiveness
     const stab = attacker.types.includes(move.type) ? 1.5 : 1;
     const effectiveness = ['super-effective', 'normal', 'not-effective'][Math.floor(Math.random() * 3)];
     const typeMultiplier = effectiveness === 'super-effective' ? 2 : effectiveness === 'not-effective' ? 0.5 : 1;
@@ -210,22 +204,6 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
     const damage = Math.floor(baseDamage * stab * typeMultiplier * random * critMultiplier);
     
     return { damage, isCritical, effectiveness };
-  };
-
-  const switchPokemon = (pokemonId: number) => {
-    const updatedTeam = playerPokemons.map(p => ({
-      ...p,
-      isActive: p.id === pokemonId,
-    }));
-    setPlayerPokemons(updatedTeam);
-    addLog(`¡Ve! ${updatedTeam.find(p => p.isActive)?.name}!`);
-    setShowMoveMenu(false);
-    
-    // Opponent turn after switch
-    setTimeout(() => {
-      const currentOpponentTeam = [...opponentPokemons];
-      opponentAttack(currentOpponentTeam);
-    }, 1000);
   };
 
   const getHpPercent = (pokemon: BattlePokemon) => {
@@ -242,12 +220,7 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
               <div class="hp-text">
                 <span style={{ fontSize: '9px' }}>{currentOpponentPokemon.name}</span>
                 {currentOpponentPokemon.status !== 'none' && (
-                  <span class={`status-${currentOpponentPokemon.status}`} style={{ 
-                    fontSize: '7px', 
-                    marginLeft: '8px',
-                    padding: '2px 4px',
-                    borderRadius: '2px'
-                  }}>
+                  <span style={{ fontSize: '7px', marginLeft: '8px', padding: '2px 4px', borderRadius: '2px', background: '#f08030' }}>
                     {currentOpponentPokemon.status.toUpperCase()}
                   </span>
                 )}
@@ -266,29 +239,36 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
           <img 
             src={currentOpponentPokemon?.spriteFront}
             alt="Opponent"
-            style={{
-              width: '80px', 
-              height: '80px',
-              imageRendering: 'pixelated',
-              marginTop: '8px'
-            }}
+            style={{ width: '80px', height: '80px', imageRendering: 'pixelated', marginTop: '8px' }}
           />
+        </div>
+
+        {/* Turn Indicator */}
+        <div style={{ 
+          position: 'absolute', 
+          top: '10px', 
+          left: '50%', 
+          transform: 'translateX(-50%)',
+          padding: '8px 16px',
+          background: isMyTurn ? '#78c850' : '#6890f0',
+          borderRadius: '4px',
+          fontSize: '9px',
+          color: '#1a1a2e'
+        }}>
+          {isMyTurn ? 'TU TURNO' : 'TURNO DEL OPONENTE'}
         </div>
 
         {/* Action Log */}
         <div style={{ 
           position: 'absolute', 
-          top: '50%', 
+top: '50%', 
           left: '50%', 
           transform: 'translate(-50%, -50%)',
           textAlign: 'center',
           width: '80%'
         }}>
           {actionLog && (
-            <div class="ds-textbox" style={{ 
-              fontSize: '9px', 
-              animation: 'fadeIn 0.2s ease-out'
-            }}>
+            <div class="ds-textbox" style={{ fontSize: '9px', animation: 'fadeIn 0.2s' }}>
               {actionLog}
             </div>
           )}
@@ -299,24 +279,14 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
           <img 
             src={currentPlayerPokemon?.spriteBack}
             alt="Player"
-            style={{ 
-              width: '96px', 
-              height: '96px',
-              imageRendering: 'pixelated',
-              marginBottom: '8px'
-            }}
+            style={{ width: '96px', height: '96px', imageRendering: 'pixelated', marginBottom: '8px' }}
           />
           {currentPlayerPokemon && (
             <div class="hp-container">
               <div class="hp-text">
                 <span style={{ fontSize: '9px' }}>{currentPlayerPokemon.name}</span>
                 {currentPlayerPokemon.status !== 'none' && (
-                  <span class={`status-${currentPlayerPokemon.status}`} style={{ 
-                    fontSize: '7px', 
-                    marginLeft: '8px',
-                    padding: '2px 4px',
-                    borderRadius: '2px'
-                  }}>
+                  <span style={{ fontSize: '7px', marginLeft: '8px', padding: '2px 4px', borderRadius: '2px', background: '#f08030' }}>
                     {currentPlayerPokemon.status.toUpperCase()}
                   </span>
                 )}
@@ -351,9 +321,9 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
         </div>
       </div>
 
-      {/* Move Menu / Team Menu */}
+      {/* Move Menu */}
       <div class="ds-panel" style={{ marginTop: '16px' }}>
-        {!gameOver && (
+        {!gameOver && isMyTurn && (
           <>
             {!showMoveMenu ? (
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -366,7 +336,7 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
                 </button>
                 <button 
                   class="ds-button"
-                  onClick={() => {/* Switch menu */}}
+                  onClick={() => {/* Switch menu - future */}}
                   style={{ flex: 1 }}
                 >
                   CAMBIAR
@@ -391,17 +361,10 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
                       class="ds-button"
                       onClick={() => performAttack(i)}
                       disabled={move.pp <= 0}
-                      style={{ 
-                        textAlign: 'left',
-                        padding: '8px'
-                      }}
+                      style={{ textAlign: 'left', padding: '8px' }}
                     >
                       <div style={{ fontSize: '9px' }}>{move.name}</div>
-                      <div style={{ 
-                        fontSize: '7px', 
-                        color: '#a8a8c8',
-                        marginTop: '4px'
-                      }}>
+                      <div style={{ fontSize: '7px', color: '#a8a8c8', marginTop: '4px' }}>
                         {move.type.toUpperCase()} | PP: {move.pp}
                       </div>
                     </button>
@@ -410,6 +373,12 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
               </div>
             )}
           </>
+        )}
+
+        {(!isMyTurn || !showMoveMenu) && !gameOver && (
+          <div style={{ textAlign: 'center', padding: '12px', color: '#a8a8c8', fontSize: '9px' }}>
+            Esperando decisión...
+          </div>
         )}
 
         {gameOver && (
@@ -426,32 +395,6 @@ export function Battle({ player, playerTeam, opponentTeam, onBattleEnd }: Battle
             </button>
           </div>
         )}
-      </div>
-
-      {/* Team Status */}
-      <div class="ds-panel" style={{ marginTop: '12px', padding: '12px' }}>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-          {playerPokemons.map((p, i) => (
-            <div 
-              key={i}
-              style={{
-                width: '40px',
-                height: '40px',
-                background: p.isFainted ? '#2a2a4a' : '#1a1a2e',
-                border: `2px solid ${p.isActive ? '#e0c030' : '#4a4a8a'}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: '4px',
-                opacity: p.isFainted ? 0.5 : 1
-              }}
-            >
-              <span style={{ fontSize: '10px' }}>
-                {p.isFainted ? 'X' : (p.maxHp - p.currentHp) / p.maxHp > 0.3 ? '!' : '✓'}
-              </span>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );

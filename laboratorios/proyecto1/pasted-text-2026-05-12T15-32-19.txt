@@ -1,0 +1,323 @@
+Actúa como arquitecto de software y desarrollador senior full-stack. Tu tarea es reorganizar y continuar el proyecto existente llamado:
+
+“Sinnoh Edition: Pokémon World Championships”
+
+NO quiero una demo improvisada. Quiero que el proyecto siga una arquitectura clara, modular y mantenible.
+
+CONTEXTO:
+El proyecto ya existe, pero la estructura actual quedó incompleta/desordenada. Debes adaptar el código existente a la arquitectura objetivo sin perder funcionalidad.
+
+OBJETIVO:
+Reestructurar el proyecto hacia esta arquitectura final:
+
+proyecto1/
+│
+├── apps/
+│   ├── web/
+│   │   ├── src/
+│   │   │   ├── routes/
+│   │   │   ├── pages/
+│   │   │   ├── components/
+│   │   │   ├── features/
+│   │   │   │   ├── champion-select/
+│   │   │   │   ├── lobby/
+│   │   │   │   ├── ban-phase/
+│   │   │   │   ├── team-select/
+│   │   │   │   ├── pre-battle-awards/
+│   │   │   │   ├── coin-flip/
+│   │   │   │   ├── battle/
+│   │   │   │   └── results/
+│   │   │   ├── assets/
+│   │   │   │   ├── sprites/
+│   │   │   │   ├── trainers/
+│   │   │   │   ├── backgrounds/
+│   │   │   │   ├── sounds/
+│   │   │   │   └── animations/
+│   │   │   └── styles/
+│   │   └── package.json
+│   │
+│   └── api/
+│       ├── src/
+│       │   ├── routes/
+│       │   │   ├── pokemon.routes.ts
+│       │   │   ├── room.routes.ts
+│       │   │   ├── battle.routes.ts
+│       │   │   ├── trainer.routes.ts
+│       │   │   └── cache.routes.ts
+│       │   ├── services/
+│       │   │   ├── pokeapi.service.ts
+│       │   │   ├── cache.service.ts
+│       │   │   ├── room.service.ts
+│       │   │   ├── websocket.service.ts
+│       │   │   └── battle.service.ts
+│       │   ├── database/
+│       │   │   ├── schema.ts
+│       │   │   └── connection.ts
+│       │   └── index.ts
+│       └── package.json
+│
+├── packages/
+│   ├── shared/
+│   │   ├── types/
+│   │   ├── constants/
+│   │   └── schemas/
+│   │
+│   ├── battle-engine/
+│   │   ├── turn-manager.ts
+│   │   ├── damage-calculator.ts
+│   │   ├── status-effects.ts
+│   │   ├── switch-rules.ts
+│   │   ├── random-move-selector.ts
+│   │   └── win-condition.ts
+│   │
+│   └── pokemon-cache/
+│       ├── cache-schema.ts
+│       ├── seed-pokemon.ts
+│       ├── generation-mapper.ts
+│       └── sprite-resolver.ts
+│
+├── docs/
+│   ├── project-scope.md
+│   ├── game-rules.md
+│   ├── technical-architecture.md
+│   ├── cache-strategy.md
+│   ├── ui-flow.md
+│   └── presentation-notes.md
+│
+├── package.json
+└── README.md
+
+STACK:
+- Frontend: mantener Preact + Vite si ya está implementado, pero organizarlo como si fuera React modular.
+- Backend: Hono + Bun.
+- WebSocket para multijugador local.
+- SQLite para caché local y persistencia mínima.
+- PokéAPI como fuente de datos.
+- Bun como runtime y package manager.
+
+IMPORTANTE:
+No rehacer desde cero si ya hay funcionalidad útil. Migrar, ordenar y corregir.
+
+COMANDOS OBLIGATORIOS:
+Los siguientes comandos deben funcionar:
+
+bun install
+bun run api
+bun run web
+
+Si fallan, debes revisar package.json, imports, dependencias, rutas, puertos y configuración hasta corregirlos.
+
+ARQUITECTURA FUNCIONAL:
+
+1. Champion Select
+Primera pantalla del juego.
+
+Texto principal:
+“SELECCIONA A TU CAMPEÓN”
+
+Debe permitir:
+- Nombre del jugador.
+- Género: hombre, mujer, otro.
+- Sprite de campeón.
+- Hombre: protagonistas masculinos.
+- Mujer: protagonistas femeninos.
+- Otro: puede elegir cualquiera.
+- Dos jugadores pueden elegir el mismo campeón.
+
+2. Lobby Online
+Debe funcionar en dos computadoras dentro de la misma red local.
+
+Flujo:
+- Crear sala.
+- Generar código de sala.
+- Unirse con código.
+- Mostrar ambos jugadores.
+- Sincronizar estado por WebSocket.
+
+3. Ban Phase
+- 3 bans por jugador.
+- Pokémon baneados no pueden seleccionarse.
+- Sincronización en tiempo real.
+
+4. Team Select
+- Usar todos los Pokémon disponibles en PokéAPI.
+- Máximo 6 Pokémon.
+- Mínimo 1 Pokémon.
+- Timer de 60 segundos.
+- Preguntar si desea relleno aleatorio.
+- Si elige relleno y tiene menos de 6, completar con random.
+- Si no elige nada, asignar 6 random.
+- Cada Pokémon recibe 4 movimientos aleatorios disponibles desde PokéAPI.
+
+5. Pre-Battle Awards
+Después de elegir equipos:
+- Si el equipo completo pertenece a una sola generación, mostrar trofeo de esa generación.
+- Si todos son de cuarta generación/Sinnoh, mostrar:
+“🏆 Campeón de Cultura”
+“Has elegido el camino correcto. Sinnoh aprueba tu equipo.”
+- Mostrar el mensaje por 10 segundos.
+
+6. Coin Flip
+- Animación de moneda pixel art.
+- Decide quién inicia.
+- No copiar assets oficiales.
+- Puede usar moneda propia con Poké Ball/Símbolo Sinnoh.
+
+7. Battle
+- Combate por turnos.
+- Acciones: atacar, cambiar Pokémon, rendirse.
+- Cambiar Pokémon consume turno.
+- Sin items.
+- Sin clima, terreno, espinas ni trampas.
+- Estados básicos:
+  - quemadura
+  - veneno
+  - sueño
+  - parálisis
+  - congelación
+  - confusión
+- Gana quien derrote todos los Pokémon del rival.
+
+8. Results
+- Mostrar ganador.
+- Mostrar resumen.
+- Permitir volver al inicio.
+
+CACHÉ:
+Implementar estrategia obligatoria:
+
+Frontend → Backend → SQLite Cache → PokéAPI
+
+El frontend NO debe consultar PokéAPI directamente de forma masiva.
+
+La caché debe guardar:
+- id
+- name
+- generation
+- types
+- front sprite
+- back sprite
+- moves
+- updated_at
+
+Si el dato existe en caché:
+- devolver desde SQLite.
+
+Si no existe:
+- consultar PokéAPI
+- guardar en SQLite
+- devolver al frontend.
+
+BATTLE ENGINE:
+Mover la lógica de batalla a packages/battle-engine.
+
+Debe incluir:
+- turn-manager.ts
+- damage-calculator.ts
+- status-effects.ts
+- switch-rules.ts
+- random-move-selector.ts
+- win-condition.ts
+
+SHARED:
+Mover tipos y constantes a packages/shared.
+
+Debe incluir constantes:
+- TESTING_GOD_MODE
+- MAX_POKEMON_PER_TEAM = 6
+- MIN_POKEMON_PER_TEAM = 1
+- BAN_LIMIT_PER_PLAYER = 3
+- TEAM_SELECTION_TIMEOUT = 60
+
+ARCEUS TESTING MODE:
+Si TESTING_GOD_MODE está activo:
+- Arceus tiene vida infinita.
+- Arceus tiene ataque infinito.
+- Arceus tiene defensa infinita.
+- Mostrar mensaje:
+“Arceus has entered the battlefield. Reality is no longer stable.”
+
+DISEÑO:
+- Estética Nintendo DS / Pokémon Platino.
+- Pixel art.
+- Caja de texto inferior.
+- Menús simples.
+- Fondo de batalla estilo multijugador DS.
+- Assets propios, placeholders o libres.
+- No usar assets oficiales protegidos directamente.
+
+SONIDOS:
+Incluir:
+- Selección de menú
+- Confirmación
+- Coin flip
+- Ataques
+- Daño
+- Pokémon debilitado
+- Victoria
+- Easter eggs
+
+ANIMACIONES:
+Crear sistema de animaciones pixel art basado en tipo de ataque:
+- fuego
+- agua
+- eléctrico
+- planta
+- lucha
+- fantasma
+- psíquico
+- hielo
+- dragón
+- roca
+- tierra
+- acero
+- veneno
+- hada
+- volador
+- normal
+
+FOOTER:
+Incluir:
+“Proyecto universitario desarrollado únicamente con fines educativos y académicos. No está afiliado, asociado, autorizado ni patrocinado por Nintendo, Game Freak, The Pokémon Company ni sus marcas relacionadas.”
+
+IMPORTANTE SOBRE MULTIJUGADOR:
+El proyecto debe poder probarse:
+- en la misma PC usando diferentes navegadores
+- en modo incógnito
+- desde otra laptop en la misma red local
+- desde celular usando la IP local
+
+El WebSocket debe soportar sincronización básica de:
+- lobby
+- bans
+- selección de equipo
+- turnos
+- acciones de batalla
+- resultado final
+
+TIPOS BASE:
+Crear modelos TypeScript para:
+- Player
+- Champion
+- Room
+- RoomStatus
+- BattlePokemon
+- Move
+- PokemonType
+- StatusEffect
+- BattleAction
+- BattleLogEntry
+- CachePokemon
+- GenerationTrophy
+
+ENTREGABLE:
+1. Reorganiza carpetas.
+2. Corrige scripts.
+3. Corrige dependencias.
+4. Corrige imports rotos.
+5. Mantén o migra la funcionalidad existente.
+6. Crea archivos faltantes.
+7. Documenta en README cómo ejecutar.
+8. Verifica que bun run api y bun run web funcionen.
+9. No hagas una demo aislada: debe ser la base real del proyecto.
+10. Prioriza estabilidad y arquitectura antes que agregar demasiadas features visuales.

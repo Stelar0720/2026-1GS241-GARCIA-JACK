@@ -1,10 +1,10 @@
-// Sinnoh Edition - API Main Entry
+// Sinnoh Edition - API Main Entry with WebSocket
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import pokemonRoutes from './routes/pokemon.routes.js';
 import cacheRoutes from './routes/cache.routes.js';
-import roomRoutes from './routes/room.routes.js';
+import { setupWebSocketServer } from './services/websocket.service.js';
 
 const app = new Hono();
 
@@ -17,12 +17,12 @@ app.use('/*', cors({
 // Routes
 app.route('/api/pokemon', pokemonRoutes);
 app.route('/api/cache', cacheRoutes);
-app.route('/api/rooms', roomRoutes);
 
 // Health check
 app.get('/health', (c) => c.json({ 
   status: 'ok', 
   service: 'Sinnoh Edition API',
+  websocket: 'ws://localhost:3001',
   timestamp: Date.now() 
 }));
 
@@ -37,10 +37,16 @@ app.get('/api/generations', async (c) => {
   }
 });
 
-const port = 3000;
-console.log(`🏛️ Sinnoh Edition API running on http://localhost:${port}`);
+// Start HTTP server
+const httpPort = 3000;
+console.log(`🏛️ Sinnoh Edition API running on http://localhost:${httpPort}`);
 
 serve({
   fetch: app.fetch,
-  port
+  port: httpPort
 });
+
+// Start WebSocket server
+setupWebSocketServer(3001);
+
+console.log('✨ Sinnoh Edition ready for multiplayer!');

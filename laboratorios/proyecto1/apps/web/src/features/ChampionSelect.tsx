@@ -1,6 +1,6 @@
 // Sinnoh Edition - Champion Select Screen
 import { useState } from 'preact/hooks';
-import type { Player } from '../../App';
+import type { Player } from '../App';
 import { generatePlayerId, getTrainerSprite, saveLocalStorage } from '../lib/api';
 
 interface ChampionSelectProps {
