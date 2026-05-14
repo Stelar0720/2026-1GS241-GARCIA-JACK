@@ -1,7 +1,7 @@
 // Sinnoh Edition - Database Schema
 // Defines all database tables for the application
 
-import { getCacheCreateSQL } from '../../../packages/pokemon-cache/src/cache-schema.js';
+import { getCacheCreateSQL } from '../../../../packages/pokemon-cache/src/cache-schema.js';
 
 export const SCHEMA_SQL = `
   -- Players table
@@ -26,6 +26,8 @@ export const SCHEMA_SQL = `
     player1_ready INTEGER DEFAULT 0,
     player2_ready INTEGER DEFAULT 0,
     current_turn TEXT,
+    current_ban_turn TEXT,
+    ban_phase_start_time INTEGER,
     winner TEXT,
     created_at INTEGER DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER DEFAULT (strftime('%s', 'now'))
@@ -98,6 +100,8 @@ export interface RoomRow {
   player1_ready: number;
   player2_ready: number;
   current_turn: string | null;
+  current_ban_turn: string | null;
+  ban_phase_start_time: number | null;
   winner: string | null;
   created_at: number;
   updated_at: number;

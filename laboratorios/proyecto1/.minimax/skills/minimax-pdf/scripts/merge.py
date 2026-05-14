@@ -100,11 +100,11 @@ def main():
     print(f"  Pages   : {result['total_pages']} total (1 cover + {result['body_pages']} body)")
     print(f"  Size    : {result['size_kb']} KB")
     if result.get("warnings"):
-        print(f"  ⚠  Warnings:")
+        print(f"  Warnings:")
         for w in result["warnings"]:
-            print(f"     • {w}")
+            print(f"     - {w}")
     else:
-        print(f"  ✓  No issues detected")
+        print(f"  OK  No issues detected")
     print(f"────────────────────────────────────────────────────────\n")
 
 

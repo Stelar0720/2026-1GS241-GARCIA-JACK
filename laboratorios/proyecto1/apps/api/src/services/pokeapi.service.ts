@@ -1,7 +1,7 @@
 // Sinnoh Edition - PokéAPI Service
 // Handles fetching and caching Pokémon data from PokéAPI
 
-import type { CachePokemon, Move, PokemonType } from '../../../packages/shared/src/types.js';
+import type { CachePokemon, Move, PokemonType } from '../../../../packages/shared/src/types.js';
 
 const POKEAPI_BASE = 'https://pokeapi.co/api/v2';
 

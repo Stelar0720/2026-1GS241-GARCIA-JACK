@@ -1,4 +1,4 @@
-// Sinnoh Edition - WebSocket Server
+// Sinnoh Edition - WebSocket Server with Ban Phase Timer
 import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { roomOps, playerOps, banOps, teamOps, generateRoomCode } from './database.service.js';
 import type { BanRow, RoomRow } from './database.service.js';
@@ -14,8 +14,13 @@ interface Message {
   payload: any;
 }
 
-const clients = new Map<string, Client>();
-const rooms = new Map<string, Set<string>>(); // roomId -> Set<playerId>
+// Constants
+const BAN_PHASE_TIMEOUT = 60; // seconds
+const BANS_PER_PLAYER = 3;
+
+// Track ban phase timers per room
+const banTimers = new Map<string, NodeJS.Timeout>();
+const banTimeRemaining = new Map<string, number>();
 
 // Broadcast to all clients in a room
 function broadcastToRoom(roomId: string, message: Message, excludePlayerId?: string) {
@@ -41,6 +46,133 @@ function sendToPlayer(playerId: string, message: Message) {
     client.ws.send(JSON.stringify(message));
   }
 }
+
+// Clear ban timer for a room
+function clearBanTimer(roomId: string) {
+  const timer = banTimers.get(roomId);
+  if (timer) {
+    clearInterval(timer);
+    banTimers.delete(roomId);
+  }
+  banTimeRemaining.delete(roomId);
+}
+
+// Start ban phase timer
+function startBanTimer(roomId: string) {
+  // Clear any existing timer
+  clearBanTimer(roomId);
+  
+  // Initialize time remaining
+  banTimeRemaining.set(roomId, BAN_PHASE_TIMEOUT);
+  
+  // Send initial time to both players
+  broadcastToRoom(roomId, {
+    type: 'ban_timer',
+    payload: { timeRemaining: BAN_PHASE_TIMEOUT, isMyTurn: true }
+  });
+  
+  // Update timer every second
+  const timer = setInterval(() => {
+    const currentTurn = getCurrentBanTurn(roomId);
+    const timeLeft = (banTimeRemaining.get(roomId) || 0) - 1;
+    banTimeRemaining.set(roomId, timeLeft);
+    
+    // Send time update to both players
+    broadcastToRoom(roomId, {
+      type: 'ban_timer_update',
+      payload: { timeRemaining: timeLeft, currentTurn }
+    });
+    
+    // Check if time expired
+    if (timeLeft <= 0) {
+      handleBanTimeout(roomId, currentTurn);
+    }
+  }, 1000);
+  
+  banTimers.set(roomId, timer);
+}
+
+// Handle ban timeout - skip current player's turn
+function handleBanTimeout(roomId: string, currentPlayerId: string | null) {
+  if (!currentPlayerId) return;
+  
+  const room = roomOps.findById.get(roomId) as RoomRow | undefined;
+  if (!room || room.status !== 'ban_phase') return;
+  
+  console.log(`⏱️ Ban timeout for player ${currentPlayerId} in room ${roomId}`);
+  
+  // Skip this player's turn - mark as skipped
+  const nextPlayer = getNextBanTurnPlayer(room, currentPlayerId);
+  
+  // Update current ban turn
+  roomOps.setCurrentBanTurn.run(nextPlayer, roomId);
+  
+  // Reset timer for next player
+  banTimeRemaining.set(roomId, BAN_PHASE_TIMEOUT);
+  
+  // Notify players
+  broadcastToRoom(roomId, {
+    type: 'ban_skipped',
+    payload: { 
+      playerId: currentPlayerId, 
+      reason: 'timeout',
+      nextTurn: nextPlayer,
+      timeRemaining: BAN_PHASE_TIMEOUT
+    }
+  });
+  
+  // Start new timer for next player
+  startBanTimerForPlayer(roomId, nextPlayer);
+}
+
+// Start timer for specific player
+function startBanTimerForPlayer(roomId: string, playerId: string) {
+  clearBanTimer(roomId);
+  banTimeRemaining.set(roomId, BAN_PHASE_TIMEOUT);
+  
+  const timer = setInterval(() => {
+    const timeLeft = (banTimeRemaining.get(roomId) || 0) - 1;
+    banTimeRemaining.set(roomId, timeLeft);
+    
+    const room = roomOps.findById.get(roomId) as RoomRow | undefined;
+    
+    broadcastToRoom(roomId, {
+      type: 'ban_timer_update',
+      payload: { 
+        timeRemaining: timeLeft, 
+        currentTurn: playerId,
+        isMyTurn: true 
+      }
+    });
+    
+    if (timeLeft <= 0) {
+      handleBanTimeout(roomId, playerId);
+    }
+  }, 1000);
+  
+  banTimers.set(roomId, timer);
+}
+
+// Get current ban turn from room
+function getCurrentBanTurn(roomId: string): string | null {
+  const room = roomOps.findById.get(roomId) as RoomRow | undefined;
+  return room?.current_ban_turn || null;
+}
+
+// Get next player to ban
+function getNextBanTurnPlayer(room: RoomRow, currentPlayerId: string): string {
+  // Simple alternation: if current is player1, next is player2, and vice versa
+  return room.player1_id === currentPlayerId ? (room.player2_id || '') : (room.player1_id || '');
+}
+
+// Determine who bans first (player1 always bans first in our implementation)
+function getFirstBanPlayer(room: RoomRow): string {
+  return room.player1_id || '';
+}
+
+// Initialize clients map
+const clients = new Map<string, Client>();
+const rooms = new Map<string, Set<string>>(); // roomId -> Set<playerId>
 
 export function setupWebSocketServer(port: number = 3001) {
   const wss = new WebSocketServer({ port });
@@ -221,6 +353,9 @@ export function setupWebSocketServer(port: number = 3001) {
     const client = clients.get(playerId);
     if (!client) return;
 
+    // Clear ban timer if exists
+    clearBanTimer(roomId);
+
     const room = roomOps.findById.get(roomId) as RoomRow | undefined;
     if (room) {
       // Notify other player
@@ -278,11 +413,28 @@ export function setupWebSocketServer(port: number = 3001) {
     // Check if both ready
     const updatedRoom = roomOps.findById.get(client.roomId) as RoomRow | undefined;
     if (updatedRoom && updatedRoom.player1_ready && updatedRoom.player2_ready) {
+      // Start ban phase
       roomOps.updateStatus.run('ban_phase', client.roomId);
+      
+      // Set first ban turn to player1
+      const firstBanPlayer = updatedRoom.player1_id || '';
+      const now = Math.floor(Date.now() / 1000);
+      
+      roomOps.setCurrentBanTurn.run(firstBanPlayer, client.roomId);
+      roomOps.setBanPhaseStartTime.run(now, client.roomId);
+      
+      // Start ban timer
+      startBanTimer(client.roomId);
       
       broadcastToRoom(client.roomId, {
         type: 'phase_change',
-        payload: { phase: 'ban_phase', roomId: client.roomId }
+        payload: { 
+          phase: 'ban_phase', 
+          roomId: client.roomId,
+          currentBanTurn: firstBanPlayer,
+          banPhaseStartTime: now,
+          timeRemaining: BAN_PHASE_TIMEOUT
+        }
       });
     }
   }
@@ -292,12 +444,24 @@ export function setupWebSocketServer(port: number = 3001) {
     const client = clients.get(playerId);
     if (!client || !client.roomId) return;
 
+    const room = roomOps.findById.get(client.roomId) as RoomRow | undefined;
+    if (!room || room.status !== 'ban_phase') return;
+
+    // Check if it's this player's turn
+    if (room.current_ban_turn && room.current_ban_turn !== playerId) {
+      sendToPlayer(playerId, { 
+        type: 'error', 
+        payload: { message: 'Not your turn to ban' } 
+      });
+      return;
+    }
+
     // Check ban limit (3 per player)
     const bans = banOps.findByRoom.all(client.roomId) as BanRow[];
     const playerBans = bans.filter((b: BanRow) => b.player_id === playerId);
     const alreadyBanned = bans.some((b: BanRow) => b.pokemon_id === pokemonId);
     
-    if (playerBans.length >= 3) {
+    if (playerBans.length >= BANS_PER_PLAYER) {
       sendToPlayer(playerId, { type: 'error', payload: { message: 'Ban limit reached' } });
       return;
     }
@@ -310,20 +474,51 @@ export function setupWebSocketServer(port: number = 3001) {
     // Add ban
     banOps.add.run(client.roomId, playerId, pokemonId);
 
-    // Broadcast
+    // Get updated bans count
+    const allBans = banOps.findByRoom.all(client.roomId) as BanRow[];
+    
+    // Broadcast to both players
     broadcastToRoom(client.roomId, {
       type: 'pokemon_banned',
-      payload: { playerId, pokemonId, roomId: client.roomId }
+      payload: { 
+        playerId, 
+        pokemonId, 
+        roomId: client.roomId,
+        totalBans: allBans.length,
+        isMyBan: true
+      }
     });
 
-    // Check if all bans complete
-    const allBans = banOps.findByRoom.all(client.roomId) as BanRow[];
-    if (allBans.length >= 6) { // 3 + 3
+    // Check if all bans complete (6 total - 3 per player)
+    if (allBans.length >= 6) {
+      // End ban phase
+      clearBanTimer(client.roomId);
       roomOps.updateStatus.run('team_select', client.roomId);
       
       broadcastToRoom(client.roomId, {
         type: 'phase_change',
-        payload: { phase: 'team_select', roomId: client.roomId, bans: allBans.map((b: BanRow) => b.pokemon_id) }
+        payload: { 
+          phase: 'team_select', 
+          roomId: client.roomId, 
+          bans: allBans.map((b: BanRow) => b.pokemon_id) 
+        }
+      });
+    } else {
+      // Switch turn to other player
+      const nextPlayer = getNextBanTurnPlayer(room, playerId);
+      roomOps.setCurrentBanTurn.run(nextPlayer, client.roomId);
+      
+      // Reset timer for next player
+      startBanTimerForPlayer(client.roomId, nextPlayer);
+      
+      // Notify of turn change
+      broadcastToRoom(client.roomId, {
+        type: 'ban_turn_changed',
+        payload: { 
+          currentTurn: nextPlayer,
+          player1Bans: allBans.filter((b: BanRow) => b.player_id === room.player1_id).length,
+          player2Bans: allBans.filter((b: BanRow) => b.player_id === room.player2_id).length
+        }
       });
     }
   }
@@ -397,6 +592,7 @@ export function setupWebSocketServer(port: number = 3001) {
     if (!client) return;
 
     if (client.roomId) {
+      clearBanTimer(client.roomId);
       leaveRoom(playerId, client.roomId);
     }
 

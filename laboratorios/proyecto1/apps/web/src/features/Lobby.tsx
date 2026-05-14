@@ -10,11 +10,10 @@ interface LobbyProps {
   onCreateRoom: () => void;
   onJoinRoom: (code: string) => void;
   onReady: () => void;
-  onStartBan: () => void;
   isConnected: boolean;
 }
 
-export function Lobby({ player, room, opponent, isOpponentReady, onCreateRoom, onJoinRoom, onReady, onStartBan, isConnected }: LobbyProps) {
+export function Lobby({ player, room, opponent, isOpponentReady, onCreateRoom, onJoinRoom, onReady, isConnected }: LobbyProps) {
   const [mode, setMode] = useState<'select' | 'create' | 'join'>('select');
   const [joinCode, setJoinCode] = useState('');
   const [isReady, setIsReady] = useState(false);
@@ -174,9 +173,9 @@ export function Lobby({ player, room, opponent, isOpponentReady, onCreateRoom, o
                   Esperando que tu oponente esté listo...
                 </div>
               ) : (
-                <button class="ds-button gold" onClick={onStartBan}>
-                  INICIAR BATALLA
-                </button>
+                <div style={{ padding: '12px', color: '#78c850' }}>
+                  Iniciando fase de ban...
+                </div>
               )}
             </div>
           </div>

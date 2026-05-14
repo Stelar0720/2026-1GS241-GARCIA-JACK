@@ -91,10 +91,12 @@ export interface Room {
   player1Team: BattlePokemon[];
   player2Team: BattlePokemon[];
   currentTurn: string | null;
+  currentBanTurn: string | null;
   turnNumber: number;
   winner: string | null;
   createdAt: number;
   updatedAt: number;
+  banPhaseStartTime: number | null;
 }
 
 export interface CachePokemon {

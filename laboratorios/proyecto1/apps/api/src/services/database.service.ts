@@ -18,6 +18,14 @@ const db = new Database(dbPath);
 // Enable WAL mode for better concurrency
 db.exec('PRAGMA journal_mode = WAL');
 
+// Add new columns if they don't exist (for existing databases)
+try {
+  db.exec('ALTER TABLE rooms ADD COLUMN current_ban_turn TEXT');
+} catch { /* Column may already exist */ }
+try {
+  db.exec('ALTER TABLE rooms ADD COLUMN ban_phase_start_time INTEGER');
+} catch { /* Column may already exist */ }
+
 // Initialize tables
 db.exec(`
   -- Players table
@@ -42,6 +50,8 @@ db.exec(`
     player1_ready INTEGER DEFAULT 0,
     player2_ready INTEGER DEFAULT 0,
     current_turn TEXT,
+    current_ban_turn TEXT,
+    ban_phase_start_time INTEGER,
     winner TEXT,
     created_at INTEGER DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER DEFAULT (strftime('%s', 'now'))
@@ -88,6 +98,8 @@ export interface RoomRow {
   player1_ready: number;
   player2_ready: number;
   current_turn: string | null;
+  current_ban_turn: string | null;
+  ban_phase_start_time: number | null;
   winner: string | null;
   created_at: number;
   updated_at: number;
@@ -174,7 +186,15 @@ export const roomOps = {
   `),
 
   setCurrentTurn: db.prepare(`
-    UPDATE rooms SET current_turn = ? WHERE id = ?
+    UPDATE rooms SET current_turn = ?, updated_at = strftime('%s', 'now') WHERE id = ?
+  `),
+
+  setCurrentBanTurn: db.prepare(`
+    UPDATE rooms SET current_ban_turn = ?, updated_at = strftime('%s', 'now') WHERE id = ?
+  `),
+
+  setBanPhaseStartTime: db.prepare(`
+    UPDATE rooms SET ban_phase_start_time = ?, updated_at = strftime('%s', 'now') WHERE id = ?
   `),
 
   setWinner: db.prepare(`

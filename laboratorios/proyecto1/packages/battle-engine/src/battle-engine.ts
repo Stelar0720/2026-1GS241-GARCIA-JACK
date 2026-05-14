@@ -2,7 +2,8 @@
 // Core battle mechanics for Pokémon combat
 
 import type { BattlePokemon, Move, StatusEffect, BattleLogEntry, PokemonType } from '../../shared/src/types.js';
-import { GAME_CONFIG, TYPE_CHART } from '../../shared/src/constants.js';
+import { GAME_CONFIG } from '../../shared/src/types.js';
+import { TYPE_CHART } from '../../shared/src/constants.js';
 
 export interface BattleState {
   player1Team: BattlePokemon[];
@@ -152,7 +153,7 @@ sourcePokemon: attacker.id,
       targetPokemon: defender.id,
       moveUsed: move,
       damageDealt: damageResult.damage,
-      effectiveness,
+      effectiveness: effectiveness === 'normal' ? undefined : effectiveness,
       logMessage: `${attacker.name} used ${move.name}! ${damageResult.damage} damage dealt.`,
       timestamp: Date.now(),
     });

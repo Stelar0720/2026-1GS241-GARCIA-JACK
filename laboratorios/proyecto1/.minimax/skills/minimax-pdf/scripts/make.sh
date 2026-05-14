@@ -1,35 +1,28 @@
 #!/usr/bin/env bash
-# make.sh — minimax-pdf unified CLI
+# make.sh — minimax-pdf unified CLI (HTML → PDF)
 # Usage: bash make.sh <command> [options]
 #
 # Commands:
 #   check                          Verify all dependencies
 #   fix                            Auto-install missing dependencies
-#   run   --title T --type TYPE    Full pipeline → output.pdf
-#         --out FILE               Output path (default: output.pdf)
-#         --author A --date D
-#         --subtitle S
-#         --abstract A             Optional abstract text for cover
-#         --cover-image URL        Optional cover image URL/path
-#         --content FILE           Path to content.json (optional)
-#   demo                           Build a full-featured demo to demo.pdf
+#   render --in page.html --out report.pdf [--wait 15000] [--format A4] ...
+#                                  CREATE: render any HTML file/URL → PDF
+#   reformat --input doc.md --out report.pdf [--title T] [--accent #HEX] ...
+#                                  REFORMAT: parse markdown/text/pdf → HTML → PDF
+#   fill   <subcommand> [args...]  FILL: probe / inspect / apply (AcroForm)
+#                                        scan / rasterize / preview / overlay / lint (visual)
 #
-# Document types:
-#   report proposal resume portfolio academic general
-#   minimal stripe diagonal frame editorial
-#   magazine darkroom terminal poster
-#
-# Content block types:
-#   h1 h2 h3 body bullet numbered callout table
-#   image figure code math chart flowchart bibliography
-#   divider caption pagebreak spacer
+# For READ / extract existing PDFs, see docs/read-guide.md (pdfplumber default,
+#   scripts/read_pdf_vision.py for vision escalation).
+# For PDF mutation (merge / split / rotate / watermark / annotate), see
+# docs/advanced-reference.md (qpdf / pypdf / reportlab cookbook).
 #
 # Exit codes: 0 success, 1 usage error, 2 dep missing, 3 runtime error
 
 set -euo pipefail
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_ROOT="$(cd "$SCRIPTS/.." && pwd)"
 PY="python3"
-NODE="node"
 
 # ── Colour helpers ─────────────────────────────────────────────────────────────
 red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
@@ -37,64 +30,125 @@ green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
 bold()   { printf '\033[1m%s\033[0m\n' "$*"; }
 
+# ── Minimum versions (single source of truth for `check` and `fix`) ───────────
+PY_MIN="3.9"
+NODE_MIN_MAJOR=18
+PYPDF_MIN="3.0"
+MARKDOWN_IT_MIN="3.0"
+
+# Compare two dotted versions A and B; succeed iff A >= B.
+ver_ge() {
+  $PY - "$1" "$2" <<'PYEOF'
+import sys
+def parts(v):
+    out = []
+    for chunk in v.split("."):
+        digits = "".join(c for c in chunk if c.isdigit())
+        out.append(int(digits) if digits else 0)
+    return out
+a, b = parts(sys.argv[1]), parts(sys.argv[2])
+n = max(len(a), len(b))
+a += [0] * (n - len(a))
+b += [0] * (n - len(b))
+sys.exit(0 if a >= b else 1)
+PYEOF
+}
+
+# Print "OK <label> <version> (>= <min>)" or set ok=false and warn.
+# Args: <import-name> <pretty-label> <min-version> [optional]
+py_pkg_check() {
+  local import_name="$1" label="$2" min="$3" optional="${4:-}"
+  if ! $PY -c "import importlib, sys; m=importlib.import_module('$import_name'); v=getattr(m,'__version__','0'); print(v)" 2>/dev/null >/tmp/.pdfgen_ver; then
+    if [[ "$optional" == "true" ]]; then
+      yellow "  WARN $label not installed (optional)"
+    else
+      yellow "  MISSING $label (run: bash make.sh fix)"
+      ok=false
+    fi
+    return
+  fi
+  local ver
+  ver="$(cat /tmp/.pdfgen_ver)"
+  if ver_ge "$ver" "$min"; then
+    green "  OK $label $ver (>= $min)"
+  else
+    red "  FAIL $label $ver is below required $min"
+    ok=false
+  fi
+}
+
 # ── check ──────────────────────────────────────────────────────────────────────
 cmd_check() {
   local ok=true
   bold "Checking dependencies..."
 
-  # Python
-  if command -v python3 &>/dev/null; then
-    green "  ✓ python3 $(python3 --version 2>&1 | awk '{print $2}')"
-  else
-    red   "  ✗ python3 not found"
+  # Python interpreter + version gate
+  if ! command -v $PY &>/dev/null; then
+    red "  MISSING python3 not found"
     ok=false
+  else
+    local py_ver
+    py_ver=$($PY -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")' 2>/dev/null || echo "?")
+    if ver_ge "$py_ver" "$PY_MIN"; then
+      green "  OK python3 $py_ver (>= $PY_MIN) at $(command -v $PY)"
+    else
+      red "  FAIL python3 $py_ver is below required $PY_MIN"
+      ok=false
+    fi
+    # pip must be importable so 'fix' can do its job
+    if $PY -m pip --version &>/dev/null; then
+      local pip_ver
+      pip_ver=$($PY -m pip --version 2>/dev/null | awk '{print $2}')
+      green "  OK pip $pip_ver"
+    else
+      yellow "  WARN pip not importable from $PY (try: $PY -m ensurepip)"
+      ok=false
+    fi
   fi
 
-  # reportlab
-  if python3 -c "import reportlab" 2>/dev/null; then
-    green "  ✓ reportlab"
-  else
-    yellow "  ⚠ reportlab not installed  (run: make.sh fix)"
-    ok=false
-  fi
+  # Python packages — pypdf is needed by fill/, markdown-it-py by reformat
+  py_pkg_check pypdf       "pypdf"          "$PYPDF_MIN"
+  py_pkg_check markdown_it "markdown-it-py" "$MARKDOWN_IT_MIN"
 
-  # pypdf
-  if python3 -c "import pypdf" 2>/dev/null; then
-    green "  ✓ pypdf"
-  else
-    yellow "  ⚠ pypdf not installed  (run: make.sh fix)"
-    ok=false
-  fi
-
-  # Node.js
+  # Node.js + version gate
   if command -v node &>/dev/null; then
-    green "  ✓ node $(node --version)"
+    local node_ver node_major
+    node_ver=$(node --version 2>&1 | sed 's/^v//')
+    node_major=${node_ver%%.*}
+    if [[ "$node_major" -ge "$NODE_MIN_MAJOR" ]]; then
+      green "  OK node v$node_ver (>= v$NODE_MIN_MAJOR)"
+    else
+      red "  FAIL node v$node_ver is below required v$NODE_MIN_MAJOR"
+      ok=false
+    fi
   else
-    red   "  ✗ node not found — cover rendering unavailable"
+    red "  MISSING node not found - HTML rendering unavailable"
     ok=false
   fi
 
-  # Playwright
+  # Playwright (resolved either locally or globally)
   if node -e "require('playwright')" 2>/dev/null || \
      node -e "require(require('child_process').execSync('npm root -g').toString().trim()+'/playwright')" 2>/dev/null; then
-    green "  ✓ playwright"
+    green "  OK playwright"
   else
-    yellow "  ⚠ playwright not found  (run: make.sh fix)"
+    yellow "  WARN playwright not found  (run: bash make.sh fix)"
     ok=false
   fi
 
-  # matplotlib (optional — required for math/chart/flowchart; degrades gracefully)
-  if python3 -c "import matplotlib" 2>/dev/null; then
-    green "  ✓ matplotlib (math, chart, flowchart blocks enabled)"
-  else
-    yellow "  ⚠ matplotlib not installed — math/chart/flowchart blocks degrade to text  (run: make.sh fix)"
-  fi
+  # pdfinfo / qpdf are nice-to-have for verification & mutation
+  if command -v pdfinfo &>/dev/null; then green "  OK pdfinfo $(pdfinfo -v 2>&1 | head -1 | awk '{print $NF}')"
+  else yellow "  WARN pdfinfo not found (brew install poppler) — only used for verification"; fi
+  if command -v qpdf &>/dev/null; then green "  OK qpdf $(qpdf --version | head -1 | awk '{print $NF}')"
+  else yellow "  WARN qpdf not found (brew install qpdf) — only used for advanced PDF mutation"; fi
 
   if $ok; then
-    green "\nAll dependencies satisfied."
+    green ""
+    green "All required dependencies satisfied."
     exit 0
   else
-    yellow "\nSome dependencies missing. Run: bash make.sh fix"
+    yellow ""
+    yellow "Some dependencies are missing or below the supported minimum."
+    yellow "Run: bash make.sh fix"
     exit 2
   fi
 }
@@ -104,387 +158,230 @@ cmd_fix() {
   bold "Installing missing dependencies..."
   local rc=0
 
-  # Python packages
-  if command -v python3 &>/dev/null; then
-    python3 -m pip install --break-system-packages -q reportlab pypdf matplotlib 2>/dev/null \
-      || python3 -m pip install -q reportlab pypdf matplotlib 2>/dev/null \
-      || { yellow "  pip install failed — try: pip install reportlab pypdf matplotlib"; rc=3; }
-    green "  ✓ Python packages installed (reportlab, pypdf, matplotlib)"
+  if ! command -v $PY &>/dev/null; then
+    red "  python3 not found - install Python $PY_MIN+ first"
+    exit 2
+  fi
+  if ! $PY -m pip --version &>/dev/null; then
+    red "  pip is not importable from $(command -v $PY)"
+    yellow "  Try: $PY -m ensurepip --upgrade"
+    exit 2
   fi
 
-  # Playwright
-  if command -v npm &>/dev/null; then
-    npm install -g playwright --silent 2>/dev/null && \
-    npx playwright install chromium --silent 2>/dev/null && \
-    green "  ✓ Playwright + Chromium installed" || \
-    { yellow "  playwright install failed — try manually"; rc=3; }
+  # Python packages
+  local pip_log
+  pip_log=$(mktemp -t pdfgen-pip.XXXXXX)
+  local pip_specs=("pypdf>=$PYPDF_MIN" "markdown-it-py>=$MARKDOWN_IT_MIN")
+  bold "  Running: $PY -m pip install ${pip_specs[*]}"
+  if $PY -m pip install --break-system-packages -q "${pip_specs[@]}" >"$pip_log" 2>&1 \
+     || $PY -m pip install -q "${pip_specs[@]}" >"$pip_log" 2>&1; then
+    green "  OK Python packages installed (pypdf, markdown-it-py)"
   else
-    yellow "  npm not found — cannot install Playwright automatically"
+    yellow "  pip install failed -- last 20 lines of output:"
+    tail -20 "$pip_log" | sed 's/^/    /'
+    rc=3
+  fi
+  rm -f "$pip_log"
+
+  # Playwright -- skip when already resolvable
+  if node -e "require('playwright')" 2>/dev/null || \
+     node -e "require(require('child_process').execSync('npm root -g').toString().trim()+'/playwright')" 2>/dev/null; then
+    green "  OK playwright already installed -- skipping"
+  elif command -v npm &>/dev/null; then
+    if npm install -g playwright --silent 2>/dev/null && \
+       npx playwright install chromium --silent 2>/dev/null; then
+      green "  OK Playwright + Chromium installed"
+    else
+      yellow "  playwright install failed -- try: npm install -g playwright && npx playwright install chromium"
+      rc=3
+    fi
+  else
+    yellow "  npm not found - cannot install Playwright (HTML rendering will fail)"
     rc=2
   fi
 
   if [[ $rc -eq 0 ]]; then
-    green "\nAll dependencies installed. Run: bash make.sh check"
+    green ""
+    green "All dependencies installed. Run: bash make.sh check"
+  else
+    yellow ""
+    yellow "Some installs failed -- run 'bash make.sh check' for the current state."
   fi
   exit $rc
 }
 
-# ── run ────────────────────────────────────────────────────────────────────────
-cmd_run() {
-  local title="Untitled Document"
-  local type="general"
-  local author=""
-  local date=""
-  local subtitle=""
-  local abstract=""
-  local cover_image=""
-  local accent=""
-  local cover_bg=""
-  local content_file=""
-  local out="output.pdf"
-  local workdir
-  workdir="$(mktemp -d)"
+# ── render ────────────────────────────────────────────────────────────────────
+# Thin wrapper around scripts/render_html.cjs. Forwards every flag through.
+# Usage:
+#   bash make.sh render --in page.html --out report.pdf [--wait 15000] ...
+cmd_render() {
+  if [[ $# -eq 0 ]]; then
+    cat <<'USAGE'
+Usage: bash make.sh render --in <file.html|url> --out <file.pdf>
+                          [--wait <ms>]              extra settle time (Chart.js: 15000)
+                          [--format A4|Letter]      page format (default A4)
+                          [--margin "14mm 12mm"]    CSS margin shorthand
+                          [--landscape]             landscape orientation
+                          [--scale 1]               print scale 0.1–2
+                          [--no-print-background]   disable color-exact print
+                          [--header <html>]         header template
+                          [--footer <html>]         footer template
 
-  # Parse options
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --title)        title="$2";        shift 2 ;;
-      --type)         type="$2";         shift 2 ;;
-      --author)       author="$2";       shift 2 ;;
-      --date)         date="$2";         shift 2 ;;
-      --subtitle)     subtitle="$2";     shift 2 ;;
-      --abstract)     abstract="$2";     shift 2 ;;
-      --cover-image)  cover_image="$2";  shift 2 ;;
-      --accent)       accent="$2";       shift 2 ;;
-      --cover-bg)     cover_bg="$2";     shift 2 ;;
-      --content)      content_file="$2"; shift 2 ;;
-      --out)          out="$2";          shift 2 ;;
-      *) echo "Unknown option: $1"; exit 1 ;;
-    esac
-  done
-
-  bold "Building: $title"
-  echo "  Type    : $type"
-  echo "  Output  : $out"
-
-  # Step 1: tokens
-  echo ""
-  bold "Step 1/4  Generating design tokens..."
-  local accent_args=()
-  [[ -n "$accent"   ]] && accent_args+=(--accent   "$accent")
-  [[ -n "$cover_bg" ]] && accent_args+=(--cover-bg "$cover_bg")
-  $PY "$SCRIPTS/palette.py" \
-    --title "$title" --type "$type" \
-    --author "$author" --date "$date" \
-    --out "$workdir/tokens.json" \
-    "${accent_args[@]+"${accent_args[@]}"}"
-
-  # Inject optional cover fields into tokens.json
-  if [[ -n "$abstract" || -n "$cover_image" ]]; then
-    PDF_ABSTRACT="$abstract" PDF_COVER_IMAGE="$cover_image" PDF_TOKENS="$workdir/tokens.json" \
-    $PY - <<'PYEOF'
-import json, os
-with open(os.environ["PDF_TOKENS"]) as f:
-    t = json.load(f)
-abstract = os.environ.get("PDF_ABSTRACT", "")
-cover_image = os.environ.get("PDF_COVER_IMAGE", "")
-if abstract:
-    t["abstract"] = abstract
-if cover_image:
-    t["cover_image"] = cover_image
-with open(os.environ["PDF_TOKENS"], "w") as f:
-    json.dump(t, f, indent=2)
-PYEOF
-  fi
-
-  cat "$workdir/tokens.json" | $PY -c "
-import json,sys
-t=json.load(sys.stdin)
-print(f'  Mood    : {t[\"mood\"]}')
-print(f'  Pattern : {t[\"cover_pattern\"]}')
-print(f'  Fonts   : {t[\"font_display\"]} / {t[\"font_body\"]}')"
-
-  # Step 2: cover HTML + render
-  echo ""
-  bold "Step 2/4  Rendering cover..."
-  local subtitle_args=()
-  [[ -n "$subtitle" ]] && subtitle_args=(--subtitle "$subtitle")
-  $PY "$SCRIPTS/cover.py" \
-    --tokens "$workdir/tokens.json" \
-    --out "$workdir/cover.html" \
-    "${subtitle_args[@]+"${subtitle_args[@]}"}"
-
-  $NODE "$SCRIPTS/render_cover.js" \
-    --input "$workdir/cover.html" \
-    --out   "$workdir/cover.pdf"
-  green "  ✓ Cover rendered"
-
-  # Step 3: body
-  echo ""
-  bold "Step 3/4  Rendering body pages..."
-  if [[ -z "$content_file" ]]; then
-    # Generate a minimal placeholder body
-    cat > "$workdir/content.json" <<'JSON'
-[
-  {"type":"h1",   "text":"Document Body"},
-  {"type":"body", "text":"Replace this with your content.json file using --content path/to/content.json"},
-  {"type":"body", "text":"See the content.json schema in the skill README for the full list of supported block types: h1, h2, h3, body, bullet, callout, table, pagebreak, spacer."}
-]
-JSON
-    content_file="$workdir/content.json"
-    yellow "  No content file provided — using placeholder body."
-  fi
-
-  $PY "$SCRIPTS/render_body.py" \
-    --tokens  "$workdir/tokens.json" \
-    --content "$content_file" \
-    --out     "$workdir/body.pdf"
-  green "  ✓ Body rendered"
-
-  # Step 4: merge
-  echo ""
-  bold "Step 4/4  Merging and QA..."
-  $PY "$SCRIPTS/merge.py" \
-    --cover "$workdir/cover.pdf" \
-    --body  "$workdir/body.pdf" \
-    --out   "$out" \
-    --title "$title"
-
-  # Cleanup
-  rm -rf "$workdir"
-}
-
-# ── fill ──────────────────────────────────────────────────────────────────────
-cmd_fill() {
-  local input="" out="" values="" data_file="" inspect_only=false
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --input)   input="$2";     shift 2 ;;
-      --out)     out="$2";       shift 2 ;;
-      --values)  values="$2";    shift 2 ;;
-      --data)    data_file="$2"; shift 2 ;;
-      --inspect) inspect_only=true; shift ;;
-      *) echo "Unknown option: $1"; exit 1 ;;
-    esac
-  done
-
-  if [[ -z "$input" ]]; then
-    echo "Usage: make.sh fill --input form.pdf [--out filled.pdf] [--values '{...}'] [--data values.json] [--inspect]"
+Examples:
+  bash make.sh render --in templates/data-viz-report/skeleton.html \
+                      --out demo.pdf --wait 15000
+  bash make.sh render --in https://example.com --out site.pdf --landscape
+USAGE
     exit 1
   fi
-
-  if $inspect_only || [[ -z "$out" && -z "$values" && -z "$data_file" ]]; then
-    bold "Inspecting form fields in: $input"
-    $PY "$SCRIPTS/fill_inspect.py" --input "$input"
-    return
-  fi
-
-  bold "Filling form: $input → $out"
-
-  local val_args=""
-  if [[ -n "$values" ]];    then val_args="--values $values"; fi
-  if [[ -n "$data_file" ]]; then val_args="--data $data_file"; fi
-
-  $PY "$SCRIPTS/fill_write.py" --input "$input" --out "$out" $val_args
+  exec node "$SCRIPTS/render_html.cjs" "$@"
 }
 
 # ── reformat ───────────────────────────────────────────────────────────────────
+# Parse a markdown / text / pdf source into HTML using the reformat-default
+# template, then render to PDF.
 cmd_reformat() {
-  local input="" title="Reformatted Document" type="general"
-  local author="" date="" out="output.pdf" subtitle=""
-  local tmpdir
-  tmpdir="$(mktemp -d)"
+  local input="" out="output.pdf"
+  local title="" subtitle="" author="" date="" accent=""
+  local template="default" wait_ms="800"
+  local keep_html=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --input)    input="$2";    shift 2 ;;
+      --out)      out="$2";      shift 2 ;;
       --title)    title="$2";    shift 2 ;;
-      --type)     type="$2";     shift 2 ;;
+      --subtitle) subtitle="$2"; shift 2 ;;
       --author)   author="$2";   shift 2 ;;
       --date)     date="$2";     shift 2 ;;
-      --subtitle) subtitle="$2"; shift 2 ;;
-      --out)      out="$2";      shift 2 ;;
-      *) echo "Unknown option: $1"; exit 1 ;;
+      --accent)   accent="$2";   shift 2 ;;
+      --template) template="$2"; shift 2 ;;
+      --wait)     wait_ms="$2";  shift 2 ;;
+      --keep-html) keep_html=true; shift ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: bash make.sh reformat --input <file.md|.txt|.pdf|.html> --out <file.pdf>
+                            [--title T] [--subtitle S] [--author A] [--date D]
+                            [--accent "#007AFF"] [--template default]
+                            [--wait <ms>] [--keep-html]
+
+Pipeline: source → markdown → reformat-default skeleton → PDF
+USAGE
+        exit 0 ;;
+      *) red "Unknown option: $1"; exit 1 ;;
     esac
   done
 
   if [[ -z "$input" ]]; then
-    echo "Usage: make.sh reformat --input source.md --title T --type TYPE --out output.pdf"
+    red "error: --input is required"
+    bash "$0" reformat --help
+    exit 1
+  fi
+  if [[ ! -f "$input" ]]; then
+    red "error: input not found: $input"
     exit 1
   fi
 
-  bold "Parsing: $input"
-  $PY "$SCRIPTS/reformat_parse.py" --input "$input" --out "$tmpdir/content.json"
-  green "  ✓ Parsed to content.json"
+  local tmpdir
+  tmpdir="$(mktemp -d -t pdfgen-reformat.XXXXXX)"
+  local html="$tmpdir/page.html"
 
-  bold "Applying design and building PDF..."
-  local sub_args=()
-  [[ -n "$subtitle" ]] && sub_args=(--subtitle "$subtitle")
+  bold "Parsing → HTML: $input"
+  local parse_args=(--input "$input" --out "$html" --template "$template")
+  [[ -n "$title"    ]] && parse_args+=(--title    "$title")
+  [[ -n "$subtitle" ]] && parse_args+=(--subtitle "$subtitle")
+  [[ -n "$author"   ]] && parse_args+=(--author   "$author")
+  [[ -n "$date"     ]] && parse_args+=(--date     "$date")
+  [[ -n "$accent"   ]] && parse_args+=(--accent   "$accent")
+  $PY "$SCRIPTS/reformat_parse.py" "${parse_args[@]}"
 
-  cmd_run \
-    --title "$title" --type "$type" \
-    --author "$author" --date "$date" \
-    --content "$tmpdir/content.json" \
-    --out "$out" \
-    "${sub_args[@]+"${sub_args[@]}"}"
+  bold "Rendering → PDF: $out"
+  node "$SCRIPTS/render_html.cjs" --in "$html" --out "$out" --wait "$wait_ms"
 
-  rm -rf "$tmpdir"
+  if $keep_html; then
+    yellow "  (--keep-html) intermediate HTML kept at: $html"
+  else
+    rm -rf "$tmpdir"
+  fi
+  green "OK reformat complete: $out"
 }
 
-# ── demo ──────────────────────────────────────────────────────────────────────
-cmd_demo() {
-  local tmpdir
-  tmpdir="$(mktemp -d)"
+# ── fill ──────────────────────────────────────────────────────────────────────
+# FILL is dispatched via subverbs that map to subpackages under scripts/.
+# All scripts run as `python -m scripts.<group>.<name>` from the skill root.
+cmd_fill() {
+  if [[ $# -lt 1 ]]; then
+    cat <<'USAGE'
+Usage: make.sh fill <subcommand> [args...]
 
-  cat > "$tmpdir/content.json" <<'JSON'
-[
-  {"type":"h1",      "text":"Executive Summary"},
-  {"type":"body",    "text":"This document was generated by minimax-pdf — a skill for creating visually polished PDFs. Every design decision is rooted in the document type and content, not a generic template."},
-  {"type":"callout", "text":"Key insight: design tokens flow from palette.py through every renderer, keeping cover and body visually consistent."},
+Subcommands:
+  probe     <input.pdf>                                 Detect AcroForm: prints acroform=true|false
+  inspect   <input.pdf> <meta.json>                     Dump AcroForm field metadata
+  apply     <input.pdf> <values.json> <output.pdf>      Apply values to AcroForm fields
+  scan      <input.pdf> <layout.json>                   Scan visual layout (non-fillable PDFs)
+  rasterize <input.pdf> <out_dir/> [--max-edge N] [--dpi N]
+                                                        Render pages to PNG
+  preview   <page> <fields.json> <page.png> <out.png>   Overlay bbox preview on a page image
+  overlay   <input.pdf> <fields.json> <output.pdf>      Lay text via FreeText annotations
+  lint      <fields.json> [--max-findings N]            Lint bounding-box geometry in fields.json
 
-  {"type":"h1",      "text":"How It Works"},
-  {"type":"h2",      "text":"The Token Pipeline"},
-  {"type":"body",    "text":"The palette.py script infers a color palette and typography pair from the document type. These tokens are written to tokens.json and consumed by every downstream script."},
-  {"type":"numbered","text":"palette.py generates color tokens, font selection, and the cover pattern"},
-  {"type":"numbered","text":"cover.py renders the cover HTML using the selected pattern"},
-  {"type":"numbered","text":"render_cover.js uses Playwright to convert the HTML cover to PDF"},
-  {"type":"numbered","text":"render_body.py builds inner pages from content.json using ReportLab"},
-  {"type":"numbered","text":"merge.py combines cover + body and runs final QA checks"},
+Decision tree: run 'fill probe' first.
+  acroform=true  → inspect → apply
+  acroform=false → scan → rasterize → preview → overlay → lint
+USAGE
+    exit 1
+  fi
 
-  {"type":"h2",      "text":"Cover Patterns"},
-  {"type":"table",
-    "headers": ["Pattern",      "Document type",    "Visual character"],
-    "rows": [
-      ["fullbleed",   "report, general",   "Deep background · dot-grid texture"],
-      ["split",       "proposal",          "Left dark panel · right dot-grid"],
-      ["typographic", "resume, academic",  "Oversized display type · first-word accent"],
-      ["atmospheric", "portfolio",         "Dark bg · radial glow · dot-grid"],
-      ["magazine",    "magazine",          "Cream bg · centered · hero image"],
-      ["darkroom",    "darkroom",          "Navy bg · centered · grayscale image"],
-      ["terminal",    "terminal",          "Near-black · grid lines · monospace"],
-      ["poster",      "poster",            "White · thick sidebar · oversized title"]
-    ]
-  },
+  local sub="$1"; shift
+  cd "$SKILL_ROOT"
+  # Prepend the skill root to PYTHONPATH so `python -m scripts.X` works even
+  # when PYTHONSAFEPATH=1 is set in the user environment.
+  export PYTHONPATH="$SKILL_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
-  {"type":"h1",      "text":"Data Visualisation"},
-  {"type":"h2",      "text":"Performance Metrics (Chart)"},
-  {"type":"body",    "text":"Charts are rendered natively using matplotlib with a color palette derived from the document accent. No external chart services or image files required."},
-  {"type":"chart",
-    "chart_type": "bar",
-    "title":      "Quarterly Performance",
-    "labels":     ["Q1", "Q2", "Q3", "Q4"],
-    "datasets": [
-      {"label": "Revenue",  "values": [120, 145, 132, 178]},
-      {"label": "Expenses", "values": [95,  108, 99,  122]}
-    ],
-    "y_label": "USD (thousands)",
-    "caption": "Quarterly revenue vs. expenses"
-  },
-
-  {"type":"h2",      "text":"Market Share (Pie Chart)"},
-  {"type":"chart",
-    "chart_type": "pie",
-    "labels":     ["Product A", "Product B", "Product C", "Other"],
-    "datasets":   [{"values": [42, 28, 18, 12]}],
-    "caption":    "Annual market share by product line"
-  },
-
-  {"type":"pagebreak"},
-
-  {"type":"h1",      "text":"Mathematics"},
-  {"type":"body",    "text":"Display math is rendered via matplotlib mathtext — no LaTeX binary installation required. Inline references use standard [N] notation in body text."},
-  {"type":"math",    "text":"E = mc^2",                              "label":"(1)"},
-  {"type":"math",    "text":"\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}", "label":"(2)"},
-  {"type":"math",    "text":"\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}", "caption":"Basel problem (Euler, 1734)"},
-
-  {"type":"h1",      "text":"Process Flow"},
-  {"type":"body",    "text":"Flowcharts are drawn directly using matplotlib patches — no Graphviz or external tools needed. Supported node shapes: rect, diamond, oval, parallelogram."},
-  {"type":"flowchart",
-    "nodes": [
-      {"id":"start",  "label":"Start",             "shape":"oval"},
-      {"id":"input",  "label":"Receive Input",      "shape":"parallelogram"},
-      {"id":"valid",  "label":"Valid?",             "shape":"diamond"},
-      {"id":"proc",   "label":"Process Data",       "shape":"rect"},
-      {"id":"err",    "label":"Return Error",        "shape":"rect"},
-      {"id":"out",    "label":"Return Result",       "shape":"parallelogram"},
-      {"id":"end",    "label":"End",                "shape":"oval"}
-    ],
-    "edges": [
-      {"from":"start", "to":"input"},
-      {"from":"input", "to":"valid"},
-      {"from":"valid", "to":"proc",  "label":"Yes"},
-      {"from":"valid", "to":"err",   "label":"No"},
-      {"from":"proc",  "to":"out"},
-      {"from":"err",   "to":"end"},
-      {"from":"out",   "to":"end"}
-    ],
-    "caption": "Data validation and processing flow"
-  },
-
-  {"type":"h1",      "text":"Code Example"},
-  {"type":"code",    "language":"python",
-    "text":"# Design token pipeline\ntokens = palette.build_tokens(\n    title=\"Annual Report\",\n    doc_type=\"report\",\n    author=\"J. Smith\",\n    date=\"March 2026\",\n)\nhtml = cover.render(tokens)\npdf  = render_cover(html)"},
-
-  {"type":"h1",      "text":"Design Principles"},
-  {"type":"body",    "text":"The aesthetic system is documented in design/design.md. The core rule: every design decision must be rooted in the document content and purpose. A color chosen because it fits the content will always outperform a color chosen because it seems safe."},
-  {"type":"h2",      "text":"Restraint over decoration"},
-  {"type":"body",    "text":"The page is done when there is nothing left to remove. Accent color appears on section rules only — not on headings, not on bullets. No card components, no drop shadows."},
-  {"type":"callout", "text":"A PDF passes the quality bar when a designer would not be embarrassed to hand it to a client."},
-
-  {"type":"pagebreak"},
-  {"type":"bibliography",
-    "title": "References",
-    "items": [
-      {"id":"1","text":"Bringhurst, R. (2004). The Elements of Typographic Style (3rd ed.). Hartley & Marks."},
-      {"id":"2","text":"Cairo, A. (2016). The Truthful Art: Data, Charts, and Maps for Communication. New Riders."},
-      {"id":"3","text":"Hochuli, J. & Kinross, R. (1996). Designing Books: Practice and Theory. Hyphen Press."}
-    ]
-  }
-]
-JSON
-
-  cmd_run \
-    --title   "minimax-pdf demo" \
-    --type    "report" \
-    --author  "minimax-pdf skill" \
-    --date    "$(date '+%B %Y')" \
-    --subtitle "A demonstration of the token-based design pipeline" \
-    --content "$tmpdir/content.json" \
-    --out     "demo.pdf"
-
-  rm -rf "$tmpdir"
+  case "$sub" in
+    probe)     bold "Probing AcroForm: $1";              $PY -m scripts.pdf_inspect.acroform_probe   "$@" ;;
+    inspect)   bold "Inspecting AcroForm: $1 → $2";      $PY -m scripts.pdf_inspect.acroform_inspect "$@" ;;
+    apply)     bold "Applying values: $1 + $2 → $3";     $PY -m scripts.fill.acroform_apply          "$@" ;;
+    scan)      bold "Scanning layout: $1 → $2";          $PY -m scripts.pdf_inspect.layout_scan      "$@" ;;
+    rasterize) bold "Rasterising pages: $1 → $2";        $PY -m scripts.render.page_rasterize        "$@" ;;
+    preview)   bold "Overlay preview: page $1 → $4";     $PY -m scripts.render.overlay_preview       "$@" ;;
+    overlay)   bold "Filling via overlay: $1 + $2 → $3"; $PY -m scripts.fill.overlay_apply           "$@" ;;
+    lint)      bold "Linting fields: $1";                $PY -m scripts.validate.geometry_lint       "$@" ;;
+    *)         red "Unknown fill subcommand: $sub";      exit 1 ;;
+  esac
 }
 
 # ── dispatch ───────────────────────────────────────────────────────────────────
 main() {
   if [[ $# -lt 1 ]]; then
-    bold "minimax-pdf — make.sh"
-    echo ""
-    echo "Usage: bash make.sh <command> [options]"
-    echo ""
-    echo "Commands:"
-    echo "  check                             Verify all dependencies"
-    echo "  fix                               Auto-install missing deps"
-    echo "  run    --title T --type TYPE      CREATE: full pipeline → PDF"
-    echo "         [--author A] [--date D] [--subtitle S]"
-    echo "         [--abstract A] [--cover-image URL]"
-    echo "         [--accent #HEX] [--cover-bg #HEX]"
-    echo "         [--content content.json] [--out output.pdf]"
-    echo "  fill   --input f.pdf              FILL: inspect or fill form fields"
-    echo "  reformat --input doc.md           REFORMAT: parse doc → apply design → PDF"
-    echo "  demo                              Build a full-featured demo PDF"
+    bold "minimax-pdf — make.sh (HTML → PDF)"
+    cat <<'USAGE'
+
+Usage: bash make.sh <command> [options]
+
+Commands:
+  check                              Verify all dependencies
+  fix                                Auto-install missing dependencies
+  render --in HTML --out PDF [opts]  CREATE: render HTML file or URL → PDF
+                                     (see: bash make.sh render with no args)
+  reformat --input SRC --out PDF     REFORMAT: markdown/text/pdf → HTML → PDF
+                                     (see: bash make.sh reformat --help)
+  fill <subcommand> [args...]        FILL: AcroForm probe/apply, visual overlay
+                                     (see: bash make.sh fill with no args)
+
+For READ / extract existing PDFs, see docs/read-guide.md.
+For PDF mutation (merge / split / rotate / watermark), see docs/advanced-reference.md.
+USAGE
     exit 0
   fi
 
   case "$1" in
-    check)    cmd_check ;;
-    fix)      cmd_fix   ;;
-    run)      shift; cmd_run      "$@" ;;
-    fill)     shift; cmd_fill     "$@" ;;
-    reformat) shift; cmd_reformat "$@" ;;
-    demo)     cmd_demo  ;;
-    *)        echo "Unknown command: $1"; exit 1 ;;
+    check)        cmd_check ;;
+    fix)          cmd_fix   ;;
+    render)       shift; cmd_render     "$@" ;;
+    reformat)     shift; cmd_reformat   "$@" ;;
+    fill)         shift; cmd_fill       "$@" ;;
+    *)            red "Unknown command: $1"; exit 1 ;;
   esac
 }
 

@@ -79,10 +79,9 @@ export function startBattle(
   const battleState: BattleState = {
     roomId,
     player1Id,
-    player2Team: p1Team,
-    player1Id,
     player2Id,
     player1Team: p1Team,
+    player2Team: p2Team,
     currentTurn: null,
     turnNumber: 0,
     isOver: false,
@@ -115,9 +114,11 @@ export function getBattleState(roomId: string): BattleState | null {
  * Execute a battle action
  */
 export function executeAction(action: BattleAction): BattleResult {
-  const engine = battleEngines.get(action.playerId === '' ? '' : '');
-  
-  if (!engine) {
+  const battle = Array.from(activeBattles.values()).find(
+    b => b.player1Id === action.playerId || b.player2Id === action.playerId
+  );
+
+  if (!battle) {
     return {
       success: false,
       logs: [],
@@ -127,17 +128,22 @@ export function executeAction(action: BattleAction): BattleResult {
     };
   }
 
+  const engine = battleEngines.get(battle.roomId);
+
+  if (!engine) {
+    return {
+      success: false,
+      logs: [],
+      isOver: false,
+      winner: null,
+      message: 'Battle engine not found',
+    };
+  }
+
   switch (action.type) {
     case 'attack':
       if (action.moveIndex === undefined) {
         return { success: false, logs: [], isOver: false, winner: null, message: 'Move index required' };
-      }
-      // Find opponent ID
-      const battle = Array.from(activeBattles.values()).find(
-        b => b.player1Id === action.playerId || b.player2Id === action.playerId
-      );
-      if (!battle) {
-        return { success: false, logs: [], isOver: false, winner: null, message: 'Battle not found' };
       }
       const opponentId = battle.player1Id === action.playerId ? battle.player2Id : battle.player1Id;
       

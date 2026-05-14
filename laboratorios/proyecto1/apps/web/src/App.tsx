@@ -30,6 +30,12 @@ export interface GameStore {
   isConnected: boolean;
   isOpponentReady: boolean;
   gamePhase: 'waiting' | 'champion_select' | 'ban_phase' | 'team_select' | 'pre_battle' | 'battle' | 'finished';
+  // Ban phase state
+  currentBanTurn: string | null;
+  banPhaseStartTime: number | null;
+  timeRemaining: number;
+  player1Bans: number;
+  player2Bans: number;
 }
 
 export interface Room {
@@ -38,6 +44,8 @@ export interface Room {
   status: string;
   player1Id?: string;
   player2Id?: string;
+  currentBanTurn?: string | null;
+  banPhaseStartTime?: number | null;
 }
 
 export function App() {
@@ -52,27 +60,33 @@ export function App() {
     isConnected: false,
     isOpponentReady: false,
     gamePhase: 'waiting',
+    currentBanTurn: null,
+    banPhaseStartTime: null,
+    timeRemaining: 60,
+    player1Bans: 0,
+    player2Bans: 0,
   });
+
+  const connectPlayer = (player: Player) => {
+    initWebSocket(player.id, {
+      onConnect: () => {
+        setStore(s => ({ ...s, isConnected: true }));
+        wsActions.register(player.id, player.name, player.gender, player.spriteUrl);
+      },
+      onDisconnect: () => {
+        setStore(s => ({ ...s, isConnected: false }));
+      },
+      onMessage: (msg: WSMessage) => handleWebSocketMessage(msg),
+      onError: (error) => console.error('WS Error:', error),
+    });
+  };
 
   // Load saved player and register WebSocket
   useEffect(() => {
     const savedPlayer = loadLocalStorage<Player | null>('player', null);
     if (savedPlayer) {
       setStore(s => ({ ...s, player: savedPlayer }));
-      
-      // Initialize WebSocket connection
-      initWebSocket(savedPlayer.id, {
-        onConnect: () => {
-          setStore(s => ({ ...s, isConnected: true }));
-          // Register player
-          wsActions.register(savedPlayer.id, savedPlayer.name, savedPlayer.gender, savedPlayer.spriteUrl);
-        },
-        onDisconnect: () => {
-          setStore(s => ({ ...s, isConnected: false }));
-        },
-        onMessage: (msg: WSMessage) => handleWebSocketMessage(msg),
-        onError: (error) => console.error('WS Error:', error),
-      });
+      connectPlayer(savedPlayer);
     }
   }, []);
 
@@ -88,7 +102,7 @@ export function App() {
       case 'room_created':
         setStore(s => ({
           ...s,
-          room: { id: msg.payload.roomId, code: msg.payload.code, status: msg.payload.status },
+          room: { id: msg.payload.roomId, code: msg.payload.code, status: msg.payload.status, player1Id: s.player?.id },
           screen: 'lobby',
         }));
         break;
@@ -96,7 +110,14 @@ export function App() {
       case 'room_joined':
         setStore(s => ({
           ...s,
-          room: { id: msg.payload.roomId, code: msg.payload.code, status: msg.payload.status },
+          room: { 
+            id: msg.payload.roomId, 
+            code: msg.payload.code, 
+            status: msg.payload.status,
+            player1Id: msg.payload.player1Id,
+            player2Id: s.player?.id,
+          },
+          opponent: { id: msg.payload.player1Id, name: 'Oponente', gender: 'other', spriteUrl: '' },
           screen: 'lobby',
         }));
         break;
@@ -104,6 +125,7 @@ export function App() {
       case 'opponent_joined':
         setStore(s => ({
           ...s,
+          room: s.room ? { ...s.room, player2Id: msg.payload.opponentId } : s.room,
           opponent: { id: msg.payload.opponentId, name: 'Oponente', gender: 'other', spriteUrl: '' },
         }));
         break;
@@ -116,7 +138,11 @@ export function App() {
         break;
 
       case 'player_ready':
-        setStore(s => ({ ...s, isOpponentReady: true }));
+        setStore(s => (
+          msg.payload.playerId !== s.player?.id 
+            ? { ...s, isOpponentReady: true }
+            : s
+        ));
         break;
 
       case 'phase_change':
@@ -124,9 +150,38 @@ export function App() {
         break;
 
       case 'pokemon_banned':
+        handlePokemonBanned(msg.payload);
+        break;
+
+      case 'ban_timer':
         setStore(s => ({
           ...s,
-          bannedPokemon: [...s.bannedPokemon, msg.payload.pokemonId],
+          timeRemaining: msg.payload.timeRemaining,
+        }));
+        break;
+
+      case 'ban_timer_update':
+        setStore(s => ({
+          ...s,
+          timeRemaining: msg.payload.timeRemaining,
+          currentBanTurn: msg.payload.currentTurn,
+        }));
+        break;
+
+      case 'ban_skipped':
+        setStore(s => ({
+          ...s,
+          currentBanTurn: msg.payload.nextTurn,
+          timeRemaining: msg.payload.timeRemaining || 60,
+        }));
+        break;
+
+      case 'ban_turn_changed':
+        setStore(s => ({
+          ...s,
+          currentBanTurn: msg.payload.currentTurn,
+          player1Bans: msg.payload.player1Bans || 0,
+          player2Bans: msg.payload.player2Bans || 0,
         }));
         break;
 
@@ -140,8 +195,26 @@ export function App() {
 
       case 'error':
         console.error('Server error:', msg.payload.message);
+        // Show error to user
+        if (msg.payload.message === 'Not your turn to ban') {
+          alert('¡No es tu turno de banear!');
+        }
         break;
     }
+  };
+
+  const handlePokemonBanned = (payload: any) => {
+    setStore(s => {
+      const newBanned = [...s.bannedPokemon, payload.pokemonId];
+      const isPlayer1 = s.room?.player1Id === payload.playerId;
+      
+      return {
+        ...s,
+        bannedPokemon: newBanned,
+        player1Bans: isPlayer1 ? s.player1Bans + 1 : s.player1Bans,
+        player2Bans: !isPlayer1 ? s.player2Bans + 1 : s.player2Bans,
+      };
+    });
   };
 
   const handlePhaseChange = (payload: any) => {
@@ -151,7 +224,17 @@ export function App() {
         break;
       
       case 'ban_phase':
-        setStore(s => ({ ...s, gamePhase: 'ban_phase', screen: 'ban' }));
+        setStore(s => ({ 
+          ...s, 
+          gamePhase: 'ban_phase',
+          screen: 'ban',
+          currentBanTurn: payload.currentBanTurn || null,
+          banPhaseStartTime: payload.banPhaseStartTime || null,
+          timeRemaining: payload.timeRemaining || 60,
+          bannedPokemon: payload.bans || [],
+          player1Bans: 0,
+          player2Bans: 0,
+        }));
         break;
       
       case 'team_select':
@@ -218,6 +301,7 @@ export function App() {
             player={store.player}
             onComplete={(player) => {
               updateStore({ player, screen: 'lobby' });
+              connectPlayer(player);
             }}
           />
         )}
@@ -231,7 +315,6 @@ export function App() {
             onCreateRoom={() => wsActions.createRoom(store.player!.id)}
             onJoinRoom={(code) => wsActions.joinRoom(store.player!.id, code)}
             onReady={() => wsActions.ready(store.player!.id)}
-            onStartBan={() => goToScreen('ban')}
             isConnected={store.isConnected}
           />
         )}
@@ -241,8 +324,12 @@ export function App() {
             player={store.player}
             room={store.room}
             bannedPokemon={store.bannedPokemon}
+            currentBanTurn={store.currentBanTurn}
             onBan={(pokemonId) => wsActions.banPokemon(store.player!.id, pokemonId)}
             onBanComplete={() => goToScreen('team-select')}
+            timeRemaining={store.timeRemaining}
+            player1Bans={store.player1Bans}
+            player2Bans={store.player2Bans}
           />
         )}
 
@@ -282,6 +369,10 @@ export function App() {
                 bannedPokemon: [],
                 opponent: null,
                 isOpponentReady: false,
+                currentBanTurn: null,
+                timeRemaining: 60,
+                player1Bans: 0,
+                player2Bans: 0,
               });
             }}
           />

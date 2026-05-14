@@ -1,374 +1,181 @@
 #!/usr/bin/env python3
 """
-reformat_parse.py — Convert an existing document into content.json,
-then hand off to the CREATE pipeline (render_body.py).
+reformat_parse.py — Parse a markdown / text / PDF / HTML source into a
+self-contained .html file ready for `render_html.cjs`.
 
-Supported input formats:
-  .md / .txt    — Markdown / plain text
-  .pdf          — Extract text from existing PDF (layout preserved as best-effort)
-  .json         — Pass-through if already content.json format
+Input formats (auto-detected by extension):
+  .md / .markdown   — Markdown (markdown-it-py with GFM table + strikethrough)
+  .txt              — Plain text (treated as a sequence of paragraphs)
+  .pdf              — pdftotext -layout (requires poppler) → markdown-ish
+  .html / .htm      — Pass-through body extraction (<body>…</body>)
+
+Output: a single HTML file (templates/<template>/skeleton.html with
+placeholders filled). Hand it to `node scripts/render_html.cjs`.
 
 Usage:
-    python3 reformat_parse.py --input doc.md   --out content.json
-    python3 reformat_parse.py --input old.pdf  --out content.json
-    python3 reformat_parse.py --input data.json --out content.json
+    python3 reformat_parse.py --input doc.md --out page.html
+    python3 reformat_parse.py --input doc.md --out page.html \
+        --title "Q3 Review" --subtitle "FY26" --author "Jane" --date 2026-04-22 \
+        --accent "#0066cc" --template default
 
-Then pipe into the CREATE pipeline:
-    python3 render_body.py --tokens tokens.json --content content.json --out body.pdf
-
-Or use make.sh reformat which does both steps:
-    bash make.sh reformat --input doc.md --type report --title "My Report" --out output.pdf
-
-Exit codes: 0 success, 1 bad args / unsupported format, 2 dep missing, 3 parse error
+Exit codes: 0 success, 1 bad args, 2 dep missing, 3 parse error
 """
 
 import argparse
-import json
-import os
-import re
-import sys
+import importlib
 import importlib.util
+import re
+import shutil
+import subprocess
+import sys
+from datetime import date as _date
 from pathlib import Path
 
+SCRIPTS_DIR = Path(__file__).resolve().parent
+SKILL_ROOT = SCRIPTS_DIR.parent
+TEMPLATES_DIR = SKILL_ROOT / "templates"
 
 
-
-def ensure_deps():
+# ── Dependency bootstrap ──────────────────────────────────────────────────────
+def ensure_deps() -> None:
     missing = []
-    if importlib.util.find_spec("pypdf") is None:
-        missing.append("pypdf")
-    if missing:
-        import subprocess
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--break-system-packages", "-q"] + missing
-        )
+    if importlib.util.find_spec("markdown_it") is None:
+        missing.append("markdown-it-py")
+    if not missing:
+        return
+    print(f"  Installing missing Python packages: {missing}", file=sys.stderr)
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "--break-system-packages", "-q", *missing]
+    )
 
 
 ensure_deps()
+from markdown_it import MarkdownIt  # noqa: E402
 
 
-# ── Markdown / plain text parser ───────────────────────────────────────────────
-def parse_markdown(text: str) -> list:
-    """
-    Convert Markdown to content.json blocks.
-    Supports: # headings, **bold**, bullet lists, > blockquotes (→ callout),
-    | tables |, plain paragraphs.
-    """
-    blocks = []
-    lines  = text.splitlines()
-    i = 0
-
-    def flush_para(buf: list):
-        t = " ".join(buf).strip()
-        if t:
-            blocks.append({"type": "body", "text": _md_inline(t)})
-
-    para_buf = []
-
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-
-        # Blank line — flush paragraph buffer
-        if not stripped:
-            flush_para(para_buf)
-            para_buf = []
-            i += 1
-            continue
-
-        # ATX Headings: # ## ###
-        m = re.match(r'^(#{1,3})\s+(.*)', stripped)
-        if m:
-            flush_para(para_buf)
-            para_buf = []
-            level = len(m.group(1))
-            htype = {1: "h1", 2: "h2", 3: "h3"}.get(level, "h3")
-            blocks.append({"type": htype, "text": _md_inline(m.group(2))})
-            i += 1
-            continue
-
-        # Display math block: $$expr$$ on one line, or opening $$ ... closing $$
-        if stripped.startswith("$$"):
-            flush_para(para_buf)
-            para_buf = []
-            inline_expr = stripped[2:].rstrip("$").strip()
-            if inline_expr:
-                # Single-line: $$E = mc^2$$
-                blocks.append({"type": "math", "text": inline_expr})
-                i += 1
-            else:
-                # Multi-line: opening $$ alone, then expression lines, then closing $$
-                math_lines = []
-                i += 1
-                while i < len(lines) and lines[i].strip() != "$$":
-                    math_lines.append(lines[i])
-                    i += 1
-                if i < len(lines):
-                    i += 1  # skip closing $$
-                blocks.append({"type": "math", "text": "\n".join(math_lines).strip()})
-            continue
-
-        # Fenced code block: ``` or ~~~
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            flush_para(para_buf)
-            para_buf = []
-            fence = stripped[:3]
-            code_lines = []
-            i += 1
-            while i < len(lines) and not lines[i].strip().startswith(fence):
-                code_lines.append(lines[i])
-                i += 1
-            if i < len(lines):
-                i += 1  # skip closing fence
-            blocks.append({"type": "code", "text": "\n".join(code_lines)})
-            continue
-
-        # Blockquote → callout
-        if stripped.startswith(">"):
-            flush_para(para_buf)
-            para_buf = []
-            qt = re.sub(r'^>\s*', '', stripped)
-            blocks.append({"type": "callout", "text": _md_inline(qt)})
-            i += 1
-            continue
-
-        # Unordered bullet: -, *, +
-        if re.match(r'^[-*+]\s+', stripped):
-            flush_para(para_buf)
-            para_buf = []
-            text_part = re.sub(r'^[-*+]\s+', '', stripped)
-            blocks.append({"type": "bullet", "text": _md_inline(text_part)})
-            i += 1
-            continue
-
-        # Ordered list: 1. 2. etc. → numbered (preserves counter in render_body)
-        if re.match(r'^\d+\.\s+', stripped):
-            flush_para(para_buf)
-            para_buf = []
-            text_part = re.sub(r'^\d+\.\s+', '', stripped)
-            blocks.append({"type": "numbered", "text": _md_inline(text_part)})
-            i += 1
-            continue
-
-        # Table: | col | col |
-        if stripped.startswith("|"):
-            flush_para(para_buf)
-            para_buf = []
-            table_lines = []
-            while i < len(lines) and lines[i].strip().startswith("|"):
-                table_lines.append(lines[i].strip())
-                i += 1
-            # Remove separator rows (|---|---|)
-            data_rows = [r for r in table_lines if not re.match(r'^\|[-:| ]+\|$', r)]
-            parsed = []
-            for row in data_rows:
-                cells = [c.strip() for c in row.strip("|").split("|")]
-                parsed.append(cells)
-            if len(parsed) >= 2:
-                blocks.append({
-                    "type":    "table",
-                    "headers": parsed[0],
-                    "rows":    parsed[1:],
-                })
-            elif len(parsed) == 1:
-                # Single row — treat as paragraph
-                blocks.append({"type": "body", "text": " | ".join(parsed[0])})
-            continue
-
-        # Horizontal rule → spacer
-        if re.match(r'^[-*_]{3,}$', stripped):
-            flush_para(para_buf)
-            para_buf = []
-            blocks.append({"type": "spacer", "pt": 16})
-            i += 1
-            continue
-
-        # Plain text → accumulate into paragraph
-        para_buf.append(stripped)
-        i += 1
-
-    flush_para(para_buf)
-    return blocks
+# ── Source readers ────────────────────────────────────────────────────────────
+def read_source(path: Path) -> str:
+    """Return markdown-ish text content for any supported input format."""
+    suffix = path.suffix.lower()
+    if suffix in (".md", ".markdown", ".txt"):
+        return path.read_text(encoding="utf-8")
+    if suffix == ".pdf":
+        if shutil.which("pdftotext") is None:
+            sys.exit(
+                "error: pdftotext not found — install poppler "
+                "(brew install poppler / apt install poppler-utils) "
+                "or convert the PDF to .md upstream."
+            )
+        out = subprocess.run(
+            ["pdftotext", "-layout", str(path), "-"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return out.stdout
+    if suffix in (".html", ".htm"):
+        # Pass-through: extract <body> if present, otherwise use the whole file.
+        text = path.read_text(encoding="utf-8")
+        m = re.search(r"<body[^>]*>(.*?)</body>", text, flags=re.S | re.I)
+        return m.group(1) if m else text
+    sys.exit(f"error: unsupported input format: {suffix}")
 
 
-def _md_inline(text: str) -> str:
-    """Convert inline Markdown to ReportLab XML markup."""
-    # Bold: **text** or __text__
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'__(.+?)__',     r'<b>\1</b>', text)
-    # Italic: *text* or _text_
-    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
-    text = re.sub(r'_(.+?)_',   r'<i>\1</i>', text)
-    # Inline code: `code`
-    text = re.sub(r'`(.+?)`', r'<font name="Courier">\1</font>', text)
-    # Strip markdown links, keep text
-    text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
-    return text
+def is_html_source(path: Path) -> bool:
+    return path.suffix.lower() in (".html", ".htm")
 
 
-# ── PDF text extractor ─────────────────────────────────────────────────────────
-def parse_pdf(pdf_path: str) -> list:
-    """
-    Extract text from an existing PDF and convert to content.json blocks.
-    Best-effort: detects headings by font size heuristics if available,
-    otherwise falls back to paragraph splitting.
-    """
-    from pypdf import PdfReader
-
-    reader = PdfReader(pdf_path)
-    all_text = []
-
-    for page in reader.pages:
-        text = page.extract_text()
-        if text:
-            all_text.append(text.strip())
-
-    full_text = "\n\n".join(all_text)
-
-    # Treat extracted PDF text as plain text / light markdown
-    # (most PDFs lose formatting — we do our best)
-    return parse_plain(full_text)
+# ── Markdown → HTML ───────────────────────────────────────────────────────────
+def md_to_html(text: str) -> str:
+    md = (
+        MarkdownIt("commonmark", {"breaks": False, "html": False, "linkify": True})
+        .enable("table")
+        .enable("strikethrough")
+    )
+    return md.render(text)
 
 
-def parse_plain(text: str) -> list:
-    """
-    Heuristic plain-text parser.
-    Short ALL-CAPS or title-case lines → headings.
-    Everything else → paragraphs.
-    """
-    blocks = []
-    paragraphs = re.split(r'\n{2,}', text.strip())
-
-    for para in paragraphs:
-        para = para.strip()
-        if not para:
-            continue
-
-        lines = para.splitlines()
-
-        # Single short line that looks like a heading
-        if len(lines) == 1 and len(para) < 80:
-            if para.isupper() or re.match(r'^[A-Z][^.!?]*$', para):
-                blocks.append({"type": "h1", "text": para.title()})
-                continue
-
-        # Bullet lists
-        if lines[0].startswith(("- ", "• ", "* ")):
-            for line in lines:
-                text_part = re.sub(r'^[-•*]\s+', '', line.strip())
-                if text_part:
-                    blocks.append({"type": "bullet", "text": text_part})
-            continue
-
-        # Regular paragraph
-        blocks.append({"type": "body", "text": " ".join(lines)})
-
-    return blocks
+def infer_title_and_body(html: str, fallback_title: str) -> tuple[str, str]:
+    """If the first element is <h1>, lift it as the document title."""
+    m = re.match(r"\s*<h1[^>]*>(.*?)</h1>\s*", html, flags=re.S | re.I)
+    if m:
+        title = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+        body = html[m.end():]
+        return title, body
+    return fallback_title, html
 
 
-# ── Pass-through validator ─────────────────────────────────────────────────────
-VALID_TYPES = {"h1","h2","h3","body","bullet","numbered","callout","table",
-               "image","code","math","divider","caption","pagebreak","spacer"}
-
-def validate_content_json(data: list) -> tuple[list, list]:
-    """Return (valid_blocks, warnings)."""
-    valid, warnings = [], []
-    for i, block in enumerate(data):
-        if not isinstance(block, dict):
-            warnings.append(f"Block {i}: not a dict, skipped")
-            continue
-        btype = block.get("type")
-        if btype not in VALID_TYPES:
-            warnings.append(f"Block {i}: unknown type '{btype}', kept as-is")
-        valid.append(block)
-    return valid, warnings
+# ── Template loading + placeholder fill ───────────────────────────────────────
+def load_template(template_name: str) -> str:
+    path = TEMPLATES_DIR / f"reformat-{template_name}" / "skeleton.html"
+    if not path.exists():
+        # Allow bare directory name as well.
+        path = TEMPLATES_DIR / template_name / "skeleton.html"
+    if not path.exists():
+        sys.exit(
+            f"error: reformat template not found: {template_name} "
+            f"(tried {TEMPLATES_DIR}/reformat-{template_name}/skeleton.html)"
+        )
+    return path.read_text(encoding="utf-8")
 
 
-# ── Dispatcher ─────────────────────────────────────────────────────────────────
-def parse_file(input_path: str) -> tuple[list, list]:
-    """Return (blocks, warnings)."""
-    ext = Path(input_path).suffix.lower()
-
-    if ext in (".md", ".txt", ".markdown"):
-        with open(input_path, encoding="utf-8", errors="replace") as f:
-            text = f.read()
-        blocks = parse_markdown(text)
-        return blocks, []
-
-    if ext == ".pdf":
-        blocks = parse_pdf(input_path)
-        return blocks, ["PDF text extraction is best-effort — review content.json before rendering"]
-
-    if ext == ".json":
-        with open(input_path) as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            return validate_content_json(data)
-        # Maybe it's a meta-wrapper {"content": [...]}
-        if isinstance(data, dict) and "content" in data:
-            return validate_content_json(data["content"])
-        return [], [f"JSON file does not contain a list of content blocks"]
-
-    return [], [f"Unsupported file type: {ext}. Supported: .md .txt .pdf .json"]
+def fill(template: str, **values: str) -> str:
+    out = template
+    for key, val in values.items():
+        token = f"<!-- {key.upper()} -->"
+        out = out.replace(token, val if val is not None else "")
+    return out
 
 
-# ── CLI ────────────────────────────────────────────────────────────────────────
-def main():
-    parser = argparse.ArgumentParser(description="Parse a document into content.json")
-    parser.add_argument("--input", required=True, help="Input file (.md, .txt, .pdf, .json)")
-    parser.add_argument("--out",   default="content.json", help="Output content.json path")
-    args = parser.parse_args()
+# ── Main ──────────────────────────────────────────────────────────────────────
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Parse markdown/text/pdf → HTML")
+    ap.add_argument("--input", required=True, help="Source file (.md / .txt / .pdf / .html)")
+    ap.add_argument("--out", required=True, help="Output HTML path")
+    ap.add_argument("--title", default="", help="Document title (default: first H1 or filename)")
+    ap.add_argument("--subtitle", default="", help="Subtitle (cover line 2)")
+    ap.add_argument("--author", default="", help="Author")
+    ap.add_argument("--date", default="", help="Date (default: today)")
+    ap.add_argument("--accent", default="#1d4ed8", help="Accent color (CSS hex)")
+    ap.add_argument("--template", default="default", help="reformat-* template slug")
+    args = ap.parse_args()
 
-    if not os.path.exists(args.input):
-        print(json.dumps({"status": "error", "error": f"File not found: {args.input}"}),
-              file=sys.stderr)
-        sys.exit(1)
+    src = Path(args.input)
+    if not src.exists():
+        sys.exit(f"error: input not found: {src}")
 
-    try:
-        blocks, warnings = parse_file(args.input)
-    except Exception as e:
-        import traceback
-        print(json.dumps({"status": "error", "error": str(e),
-                          "trace": traceback.format_exc()}), file=sys.stderr)
-        sys.exit(3)
+    raw = read_source(src)
 
-    if not blocks:
-        print(json.dumps({
-            "status":   "error",
-            "error":    "No content blocks extracted",
-            "warnings": warnings,
-        }), file=sys.stderr)
-        sys.exit(3)
+    # If source is HTML, treat it as already-rendered body; otherwise render
+    # markdown.
+    body_html = raw if is_html_source(src) else md_to_html(raw)
 
-    with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(blocks, f, indent=2, ensure_ascii=False)
+    fallback_title = src.stem.replace("_", " ").replace("-", " ").strip().title()
+    title, body_html = infer_title_and_body(body_html, args.title or fallback_title)
 
-    result = {
-        "status":      "ok",
-        "out":         args.out,
-        "block_count": len(blocks),
-        "warnings":    warnings,
-    }
-    print(json.dumps(result, indent=2))
+    template = load_template(args.template)
+    page = fill(
+        template,
+        title=title,
+        subtitle=args.subtitle,
+        author=args.author,
+        date=args.date or _date.today().isoformat(),
+        accent=args.accent,
+        body_html=body_html,
+    )
 
-    print(f"\n── Parsed {args.input} ─────────────────────────────────────",
-          file=sys.stderr)
-    print(f"  Blocks : {len(blocks)}", file=sys.stderr)
-
-    type_counts: dict = {}
-    for b in blocks:
-        type_counts[b.get("type","?")] = type_counts.get(b.get("type","?"), 0) + 1
-    for t, n in sorted(type_counts.items()):
-        print(f"    {t:12} × {n}", file=sys.stderr)
-
-    if warnings:
-        print(f"  Warnings:", file=sys.stderr)
-        for w in warnings:
-            print(f"    ⚠  {w}", file=sys.stderr)
-    print(f"\n  Next: bash make.sh run --content {args.out} --title '...' --type ...",
-          file=sys.stderr)
-    print("", file=sys.stderr)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(page, encoding="utf-8")
+    print(f"  OK Parsed → {out}  (title: {title!r}, {len(body_html):,} chars body)")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(3)

@@ -22,7 +22,11 @@ export type MessageType =
   | 'team_selected'
   | 'battle_update'
   | 'error'
-  | 'pong';
+  | 'pong'
+  | 'ban_timer'
+  | 'ban_timer_update'
+  | 'ban_skipped'
+  | 'ban_turn_changed';
 
 export interface WSMessage {
   type: MessageType;

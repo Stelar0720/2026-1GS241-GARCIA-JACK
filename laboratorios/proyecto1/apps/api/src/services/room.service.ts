@@ -1,7 +1,7 @@
 // Sinnoh Edition - Room Service
 // Handles room creation, management, and room-related operations
 
-import db, { Database } from '../database/connection.js';
+import db from '../database/connection.js';
 import type { RoomRow, PlayerRow } from '../database/schema.js';
 
 export interface RoomService {
