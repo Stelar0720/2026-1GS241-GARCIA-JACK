@@ -228,8 +228,12 @@ export const banOps = {
 
 // Team operations
 export const teamOps = {
+  deleteByRoomAndPlayer: db.prepare(`
+    DELETE FROM teams WHERE room_id = ? AND player_id = ?
+  `),
+
   save: db.prepare(`
-    INSERT OR REPLACE INTO teams (room_id, player_id, pokemon_data)
+    INSERT INTO teams (room_id, player_id, pokemon_data)
     VALUES (?, ?, ?)
   `),
 

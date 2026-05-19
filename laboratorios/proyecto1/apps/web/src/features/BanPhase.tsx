@@ -1,7 +1,7 @@
-// Sinnoh Edition - Ban Phase Screen with WebSocket and Timer
+// Sinnoh Edition - Ban Phase Screen with Filters and Search
 import { useState, useEffect } from 'preact/hooks';
 import type { Player, Room } from '../App';
-import { fetchPokemon } from '../lib/api';
+import { CONFIG, fetchPokemon, getCachedPokemon, setCachedPokemon, getPokemonSprite } from '../lib/api';
 
 interface BanPhaseProps {
   player: Player;
@@ -15,6 +15,13 @@ interface BanPhaseProps {
   player2Bans: number;
 }
 
+interface PokemonData {
+  id: number;
+  name: string;
+  types: string[];
+  spriteFront: string;
+}
+
 export function BanPhase({ 
   player, 
   room: _room, 
@@ -26,10 +33,13 @@ export function BanPhase({
   player1Bans,
   player2Bans
 }: BanPhaseProps) {
-  const [pokemons, setPokemons] = useState<any[]>([]);
+  const [pokemons, setPokemons] = useState<PokemonData[]>([]);
+  const [filteredPokemons, setFilteredPokemons] = useState<PokemonData[]>([]);
   const [myBans, setMyBans] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeLeft, setTimeLeft] = useState(timeRemaining);
+  const [selectedGen, setSelectedGen] = useState<number | null>(null); // null = ALL
+  const [searchQuery, setSearchQuery] = useState('');
   const maxBans = 3;
 
   const isMyTurn = currentBanTurn === player.id;
@@ -38,25 +48,75 @@ export function BanPhase({
     setTimeLeft(timeRemaining);
   }, [timeRemaining]);
 
+  // Load pokemons by generation (when gen changes)
   useEffect(() => {
     const loadPokemons = async () => {
-      // Load Sinnoh pokemons for demo
-      const gen4Ids = Array.from({ length: 50 }, (_, i) => i + 387);
-      const loaded = await Promise.all(
-        gen4Ids.map(async (id) => {
-          try {
-            const data = await fetchPokemon(id);
-            return data;
-          } catch {
-            return null;
+      setLoading(true);
+      // Determine which generation range to load
+      let genRange;
+      if (selectedGen === null) {
+        // Load first 200 pokemons for "ALL" (performance)
+        genRange = { min: 1, max: 200 };
+      } else {
+        const gen = CONFIG.GENERATIONS.find(g => g.id === selectedGen);
+        if (!gen) {
+          setLoading(false);
+          return;
+        }
+        genRange = { min: gen.min, max: gen.max };
+      }
+      
+      // Load lightweight pokemon data in parallel; this keeps the ban phase responsive.
+      const count = Math.min(genRange.max - genRange.min + 1, 80);
+      const ids: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const id = genRange.min + i;
+        if (bannedPokemon.includes(id.toString())) continue;
+        ids.push(id);
+      }
+
+      const loadedPokemon = (await Promise.all(ids.map(async (id) => {
+        try {
+          let pokemon = getCachedPokemon(id);
+          if (!pokemon) {
+            pokemon = await fetchPokemon(id);
+            setCachedPokemon(id, pokemon);
           }
-        })
-      );
-      setPokemons(loaded.filter(Boolean));
+          
+          if (pokemon) {
+            return {
+              id: pokemon.id,
+              name: pokemon.name,
+              types: pokemon.types?.map((t: any) => t.type?.name || t) || [],
+              spriteFront: pokemon.spriteFront || pokemon.sprites?.front_default || getPokemonSprite(pokemon.id),
+            };
+          }
+        } catch (error) {
+          console.error(`Error loading pokemon ${id}:`, error);
+        }
+        return null;
+      }))).filter(Boolean) as PokemonData[];
+      
+      setPokemons(loadedPokemon);
+      setFilteredPokemons(loadedPokemon);
       setLoading(false);
     };
     loadPokemons();
-  }, []);
+  }, [selectedGen, bannedPokemon.length]);
+
+  // Filter by search
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredPokemons(pokemons);
+    } else {
+      const query = searchQuery.toLowerCase().trim();
+      const filtered = pokemons.filter(p => 
+        p.name.toLowerCase().includes(query) ||
+        p.id.toString().includes(query)
+      );
+      setFilteredPokemons(filtered);
+    }
+  }, [searchQuery, pokemons]);
 
   const handleBan = (pokemonId: string) => {
     if (!isMyTurn) return;
@@ -73,7 +133,6 @@ export function BanPhase({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // All bans complete (6 total)
   const allBansComplete = bannedPokemon.length >= 6;
 
   return (
@@ -146,10 +205,49 @@ export function BanPhase({
           </div>
         </div>
 
-        <div class="ds-textbox" style={{ marginBottom: '16px' }}>
+        {/* Search and Filters */}
+        <div style={{ marginBottom: '12px' }}>
+          <input
+            type="text"
+            class="ds-input"
+            placeholder="Buscar por nombre o ID..."
+            value={searchQuery}
+            onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
+            style={{ marginBottom: '8px', width: '100%' }}
+          />
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            <button
+              class={`ds-button ${selectedGen === null ? 'gold' : ''}`}
+              onClick={() => setSelectedGen(null)}
+              style={{ 
+                fontSize: '8px', 
+                padding: '4px 8px',
+                minWidth: 'auto'
+              }}
+            >
+              TODOS
+            </button>
+            {CONFIG.GENERATIONS.map(gen => (
+              <button
+                key={gen.id}
+                class={`ds-button ${selectedGen === gen.id ? 'gold' : ''}`}
+                onClick={() => setSelectedGen(gen.id)}
+                style={{ 
+                  fontSize: '8px', 
+                  padding: '4px 8px',
+                  minWidth: 'auto'
+                }}
+              >
+                {gen.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div class="ds-textbox" style={{ marginBottom: '12px' }}>
           <p style={{ fontSize: '10px', textAlign: 'center' }}>
             {isMyTurn 
-              ? `Banea ${maxBans - myBans.length} Pokémon (turno ${bannedPokemon.length + 1})`
+              ? `Banea ${maxBans - myBans.length} Pokémon`
               : 'Esperando al oponente...'
             }
           </p>
@@ -161,47 +259,57 @@ export function BanPhase({
           </div>
         ) : (
           <div class="pokemon-grid" style={{ maxHeight: '280px' }}>
-            {pokemons.map((pokemon) => {
-              const isBanned = bannedPokemon.includes(pokemon.id.toString());
-              const isMyPendingBan = myBans.includes(pokemon.id.toString());
-              const canBan = !isBanned && isMyTurn && myBans.length < maxBans;
-              
-              return (
-                <div
-                  key={pokemon.id}
-                  class={`pokemon-card ${canBan ? 'can-ban' : ''}`}
-                  onClick={() => canBan && handleBan(pokemon.id.toString())}
-                  style={{ 
-                    opacity: isBanned ? 0.4 : 1,
-                    borderColor: isMyPendingBan ? '#c03030' : 
-                               isBanned ? '#705898' : 
-                               canBan ? '#e0c030' : undefined,
-                    cursor: canBan ? 'pointer' : (isBanned ? 'not-allowed' : 'default'),
-                    transform: canBan ? 'scale(1.05)' : undefined,
-                    boxShadow: canBan ? '0 0 10px rgba(224, 192, 48, 0.5)' : undefined
-                  }}
-                >
-                  <img 
-                    src={pokemon.spriteFront} 
-                    alt={pokemon.name}
-                    class="pokemon-sprite"
-                  />
-                  <p class="pokemon-name">{pokemon.name}</p>
-                  {isBanned && (
-                    <span style={{ 
-                      fontSize: '7px', 
-                      color: '#c03030',
-                      background: '#1a1a2e',
-                      padding: '2px 4px',
-                      borderRadius: '2px',
-                      marginTop: '4px'
-                    }}>
-                      BANEADO
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {filteredPokemons.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#a8a8c8' }}>
+                No se encontraron Pokémon
+              </div>
+            ) : (
+              filteredPokemons.map((pokemon) => {
+                const isBanned = bannedPokemon.includes(pokemon.id.toString());
+                const isMyPendingBan = myBans.includes(pokemon.id.toString());
+                const canBan = !isBanned && isMyTurn && myBans.length < maxBans;
+                
+                return (
+                  <div
+                    key={pokemon.id}
+                    class={`pokemon-card ${canBan ? 'can-ban' : ''}`}
+                    onClick={() => canBan && handleBan(pokemon.id.toString())}
+                    style={{ 
+                      opacity: isBanned ? 0.4 : 1,
+                      borderColor: isMyPendingBan ? '#c03030' : 
+                                 isBanned ? '#705898' : 
+                                 canBan ? '#e0c030' : undefined,
+                      cursor: canBan ? 'pointer' : (isBanned ? 'not-allowed' : 'default'),
+                      transform: canBan ? 'scale(1.05)' : undefined,
+                      boxShadow: canBan ? '0 0 10px rgba(224, 192, 48, 0.5)' : undefined
+                    }}
+                  >
+                    <img 
+                      src={pokemon.spriteFront || getPokemonSprite(pokemon.id)} 
+                      alt={pokemon.name}
+                      class="pokemon-sprite"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = getPokemonSprite(pokemon.id);
+                      }}
+                    />
+<p class="pokemon-name">{pokemon.name}</p>
+                    <p style={{ fontSize: '7px', color: '#a8a8c8' }}>#{pokemon.id}</p>
+                    {isBanned && (
+                      <span style={{ 
+                        fontSize: '7px', 
+                        color: '#c03030',
+                        background: '#1a1a2e',
+                        padding: '2px 4px',
+                        borderRadius: '2px',
+                        marginTop: '4px'
+                      }}>
+                        BANEADO
+                      </span>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
 

@@ -14,6 +14,7 @@ interface PokeAPIResponse {
     back_shiny: string | null;
   };
   stats: { base_stat: number; stat: { name: string } }[];
+  moves: { move: { url: string } }[];
 }
 
 interface PokeAPIMoveResponse {
@@ -49,13 +50,21 @@ class PokeAPICache {
 
       const data = await response.json() as PokeAPIResponse;
       const pokemon = this.transformPokemonData(data);
-      
+
       this.cache.set(id, pokemon);
       return pokemon;
     } catch (error) {
       console.error(`Failed to fetch pokemon ${id}:`, error);
       return null;
     }
+  }
+
+  async getPokemonWithMoves(id: number): Promise<CachePokemon | null> {
+    const pokemon = await this.getPokemon(id);
+    if (pokemon && pokemon.moves.length === 0) {
+      pokemon.moves = await this.getMovesForPokemon(id);
+    }
+    return pokemon;
   }
 
   async getPokemonByName(name: string): Promise<CachePokemon | null> {
@@ -72,7 +81,7 @@ class PokeAPICache {
 
       const data = await response.json() as PokeAPIResponse;
       const pokemon = this.transformPokemonData(data);
-      
+
       this.cache.set(pokemon.id, pokemon);
       return pokemon;
     } catch (error) {
@@ -90,30 +99,38 @@ class PokeAPICache {
       const data = await response.json() as { moves: { move: { url: string } }[] };
       const moves: Move[] = [];
 
-      // Limit moves for performance
-      const limitedMoves = data.moves.slice(0, CACHE_CONFIG.MAX_MOVES_PER_POKEMON);
+      // Limit moves for performance (4 moves per type for variety)
+      const moveMap = new Map<string, Move>();
+      const maxMovesPerType = Math.ceil(CACHE_CONFIG.MAX_MOVES_PER_POKEMON / 10);
       
-      for (const moveRef of limitedMoves) {
+      for (const moveRef of data.moves) {
+        if (moveMap.size >= CACHE_CONFIG.MAX_MOVES_PER_POKEMON) break;
+        
         try {
           const moveResponse = await fetch(moveRef.move.url);
           if (moveResponse.ok) {
             const moveData: PokeAPIMoveResponse = await moveResponse.json();
-            moves.push({
-              id: moveData.id,
-              name: this.formatMoveName(moveData.name),
-              type: moveData.type.name as PokemonType,
-              power: moveData.power ?? 0,
-              accuracy: moveData.accuracy ?? 100,
-              pp: moveData.pp ?? 20,
-              maxPp: moveData.pp ?? 20,
-            });
+            
+            // Only add one move per type for variety, prefer higher power
+            const existing = moveMap.get(moveData.type.name);
+            if (!existing || (moveData.power && moveData.power > (existing.power || 0))) {
+              moveMap.set(moveData.type.name, {
+                id: moveData.id,
+                name: this.formatMoveName(moveData.name),
+                type: moveData.type.name as PokemonType,
+                power: moveData.power ?? 0,
+                accuracy: moveData.accuracy ?? 100,
+                pp: moveData.pp ?? 20,
+                maxPp: moveData.pp ?? 20,
+              });
+            }
           }
         } catch {
           continue;
         }
       }
 
-      return moves;
+      return Array.from(moveMap.values());
     } catch (error) {
       console.error(`Failed to fetch moves for pokemon ${pokemonId}:`, error);
       return [];
@@ -176,7 +193,7 @@ class PokeAPICache {
     return {
       id: data.id,
       name: this.formatPokemonName(data.name),
-      nameJp: data.name, // PokéAPI has localized names, simplified here
+      nameJp: data.name,
       generation: this.getGenerationById(data.id),
       types: data.types
         .sort((a, b) => a.slot - b.slot)
@@ -239,7 +256,7 @@ class PokeAPICache {
     for (const range of generationRanges) {
       if (id <= range.max) return range.gen;
     }
-    return 9; // Paldea
+    return 9;
   }
 }
 
@@ -250,8 +267,8 @@ interface TypeEffectiveness {
 export const CACHE_CONFIG = {
   MAX_POKEMON_IN_CACHE: 1025,
   MAX_MOVES_PER_POKEMON: 50,
-  CACHE_TTL_MS: 1000 * 60 * 60 * 24, // 24 hours
-  RATE_LIMIT_DELAY: 100, // ms between requests
+  CACHE_TTL_MS: 1000 * 60 * 60 * 24,
+  RATE_LIMIT_DELAY: 100,
 };
 
 export const API_BASE = 'https://pokeapi.co/api/v2';

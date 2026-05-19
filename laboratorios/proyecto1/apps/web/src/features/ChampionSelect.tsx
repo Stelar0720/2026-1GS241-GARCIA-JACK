@@ -1,7 +1,7 @@
-// Sinnoh Edition - Champion Select Screen
+// Sinnoh Edition - Champion Select Screen with Region Selection
 import { useState } from 'preact/hooks';
 import type { Player } from '../App';
-import { generatePlayerId, getTrainerSprite, saveLocalStorage } from '../lib/api';
+import { generatePlayerId, getTrainerSprite, saveLocalStorage, REGIONS } from '../lib/api';
 
 interface ChampionSelectProps {
   player: Player | null;
@@ -11,12 +11,18 @@ interface ChampionSelectProps {
 export function ChampionSelect({ player, onComplete }: ChampionSelectProps) {
   const [name, setName] = useState(player?.name || '');
   const [gender, setGender] = useState<'male' | 'female' | 'other'>(player?.gender || 'male');
-  const [step, setStep] = useState<'name' | 'gender' | 'confirm'>('name');
+  const [region, setRegion] = useState('sinnoh');
+  const [step, setStep] = useState<'name' | 'region' | 'gender' | 'confirm'>('name');
 
   const handleNameSubmit = () => {
     if (name.trim().length >= 2) {
-      setStep('gender');
+      setStep('region');
     }
+  };
+
+  const handleRegionSelect = (r: string) => {
+    setRegion(r);
+    setStep('gender');
   };
 
   const handleGenderSelect = (g: 'male' | 'female' | 'other') => {
@@ -25,15 +31,18 @@ export function ChampionSelect({ player, onComplete }: ChampionSelectProps) {
   };
 
   const handleConfirm = () => {
+    const spriteUrl = getTrainerSprite(gender, region);
     const newPlayer: Player = {
       id: player?.id || generatePlayerId(),
       name: name.trim(),
       gender,
-      spriteUrl: getTrainerSprite(gender),
+      spriteUrl,
     };
     saveLocalStorage('player', newPlayer);
     onComplete(newPlayer);
   };
+
+  const trainerSprite = getTrainerSprite(gender, region);
 
   return (
     <div class="screen champion-select">
@@ -62,6 +71,26 @@ export function ChampionSelect({ player, onComplete }: ChampionSelectProps) {
               >
                 CONTINUAR
               </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'region' && (
+          <div class="ds-textbox">
+            <p style={{ marginBottom: '16px', textAlign: 'center' }}>Selecciona tu región favorita:</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginTop: '16px' }}>
+              {REGIONS.map((r) => (
+                <button
+                  key={r.id}
+                  class={`ds-button ${region === r.id ? 'gold' : ''}`}
+                  onClick={() => handleRegionSelect(r.id)}
+                  style={{
+                    borderLeft: `4px solid ${r.color}`,
+                  }}
+                >
+                  {r.name}
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -95,19 +124,31 @@ export function ChampionSelect({ player, onComplete }: ChampionSelectProps) {
         {step === 'confirm' && (
           <div class="ds-textbox">
             <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-              <img 
-                src={getTrainerSprite(gender)} 
-                alt="Trainer" 
-                style={{ 
-                  width: '96px', 
-                  height: '96px', 
-                  imageRendering: 'pixelated',
-                  marginBottom: '16px'
-                }}
-              />
-              <p style={{ fontSize: '12px', color: '#e0c030' }}>{name}</p>
-              <p style={{ fontSize: '9px', color: '#a8a8c8', marginTop: '4px' }}>
-                {gender === 'male' ? 'Hombre' : gender === 'female' ? 'Mujer' : 'Otro'}
+              {/* Trainer sprite with fallback */}
+              <div style={{
+                width: '96px',
+                height: '96px',
+                margin: '0 auto 16px',
+                background: REGIONS.find(r => r.id === region)?.color || '#b8c8d8',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px solid #e0c030',
+              }}>
+                <img 
+                  src={trainerSprite}
+                  alt="Trainer"
+                  style={{ 
+                    width: '96px', 
+                    height: '96px',
+                    imageRendering: 'auto',
+                  }}
+                />
+              </div>
+              <p style={{ fontSize: '14px', color: '#e0c030' }}>{name}</p>
+              <p style={{ fontSize: '10px', color: '#a8a8c8', marginTop: '4px' }}>
+                {gender === 'male' ? 'Hombre' : gender === 'female' ? 'Mujer' : 'Otro'} - {REGIONS.find(r => r.id === region)?.name || 'Sinnoh'}
               </p>
             </div>
             <div class="nav-buttons">

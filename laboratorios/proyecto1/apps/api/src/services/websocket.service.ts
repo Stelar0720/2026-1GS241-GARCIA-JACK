@@ -1,7 +1,7 @@
 // Sinnoh Edition - WebSocket Server with Ban Phase Timer
 import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { roomOps, playerOps, banOps, teamOps, generateRoomCode } from './database.service.js';
-import type { BanRow, RoomRow } from './database.service.js';
+import type { BanRow, RoomRow, TeamRow } from './database.service.js';
 
 interface Client {
   ws: WebSocket;
@@ -21,6 +21,7 @@ const BANS_PER_PLAYER = 3;
 // Track ban phase timers per room
 const banTimers = new Map<string, NodeJS.Timeout>();
 const banTimeRemaining = new Map<string, number>();
+const banDecisionCounts = new Map<string, number>();
 
 // Broadcast to all clients in a room
 function broadcastToRoom(roomId: string, message: Message, excludePlayerId?: string) {
@@ -57,6 +58,36 @@ function clearBanTimer(roomId: string) {
   banTimeRemaining.delete(roomId);
 }
 
+function getBanDecisionCount(roomId: string): number {
+  const persistedBans = (banOps.findByRoom.all(roomId) as BanRow[]).length;
+  return Math.max(persistedBans, banDecisionCounts.get(roomId) || 0);
+}
+
+function advanceToTeamSelect(roomId: string) {
+  clearBanTimer(roomId);
+  banDecisionCounts.delete(roomId);
+  roomOps.updateStatus.run('team_select', roomId);
+
+  const allBans = banOps.findByRoom.all(roomId) as BanRow[];
+  broadcastToRoom(roomId, {
+    type: 'phase_change',
+    payload: {
+      phase: 'team_select',
+      roomId,
+      bans: allBans.map((b: BanRow) => b.pokemon_id)
+    }
+  });
+}
+
+function parseTeam(row: unknown): any[] {
+  if (!row) return [];
+  try {
+    return JSON.parse((row as TeamRow).pokemon_data);
+  } catch {
+    return [];
+  }
+}
+
 // Start ban phase timer
 function startBanTimer(roomId: string) {
   // Clear any existing timer
@@ -64,6 +95,7 @@ function startBanTimer(roomId: string) {
   
   // Initialize time remaining
   banTimeRemaining.set(roomId, BAN_PHASE_TIMEOUT);
+  banDecisionCounts.set(roomId, getBanDecisionCount(roomId));
   
   // Send initial time to both players
   broadcastToRoom(roomId, {
@@ -100,6 +132,14 @@ function handleBanTimeout(roomId: string, currentPlayerId: string | null) {
   if (!room || room.status !== 'ban_phase') return;
   
   console.log(`⏱️ Ban timeout for player ${currentPlayerId} in room ${roomId}`);
+
+  const decisions = getBanDecisionCount(roomId) + 1;
+  banDecisionCounts.set(roomId, decisions);
+
+  if (decisions >= BANS_PER_PLAYER * 2) {
+    advanceToTeamSelect(roomId);
+    return;
+  }
   
   // Skip this player's turn - mark as skipped
   const nextPlayer = getNextBanTurnPlayer(room, currentPlayerId);
@@ -472,10 +512,12 @@ export function setupWebSocketServer(port: number = 3001) {
     }
 
     // Add ban
+    const decisionsBeforeBan = getBanDecisionCount(client.roomId);
     banOps.add.run(client.roomId, playerId, pokemonId);
 
     // Get updated bans count
     const allBans = banOps.findByRoom.all(client.roomId) as BanRow[];
+    banDecisionCounts.set(client.roomId, decisionsBeforeBan + 1);
     
     // Broadcast to both players
     broadcastToRoom(client.roomId, {
@@ -490,19 +532,8 @@ export function setupWebSocketServer(port: number = 3001) {
     });
 
     // Check if all bans complete (6 total - 3 per player)
-    if (allBans.length >= 6) {
-      // End ban phase
-      clearBanTimer(client.roomId);
-      roomOps.updateStatus.run('team_select', client.roomId);
-      
-      broadcastToRoom(client.roomId, {
-        type: 'phase_change',
-        payload: { 
-          phase: 'team_select', 
-          roomId: client.roomId, 
-          bans: allBans.map((b: BanRow) => b.pokemon_id) 
-        }
-      });
+    if (getBanDecisionCount(client.roomId) >= BANS_PER_PLAYER * 2) {
+      advanceToTeamSelect(client.roomId);
     } else {
       // Switch turn to other player
       const nextPlayer = getNextBanTurnPlayer(room, playerId);
@@ -529,12 +560,13 @@ export function setupWebSocketServer(port: number = 3001) {
     if (!client || !client.roomId) return;
 
     // Save team
+    teamOps.deleteByRoomAndPlayer.run(client.roomId, playerId);
     teamOps.save.run(client.roomId, playerId, JSON.stringify(team));
 
     // Broadcast team selected
     broadcastToRoom(client.roomId, {
       type: 'team_selected',
-      payload: { playerId, roomId: client.roomId }
+      payload: { playerId, roomId: client.roomId, team }
     });
 
     // Check if both teams selected
@@ -546,10 +578,21 @@ export function setupWebSocketServer(port: number = 3001) {
 
       if (p1Team && p2Team) {
         roomOps.updateStatus.run('pre_battle', client.roomId);
+        if (updatedRoom.player1_id) {
+          roomOps.setCurrentTurn.run(updatedRoom.player1_id, client.roomId);
+        }
         
         broadcastToRoom(client.roomId, {
           type: 'phase_change',
-          payload: { phase: 'pre_battle', roomId: client.roomId }
+          payload: {
+            phase: 'pre_battle',
+            roomId: client.roomId,
+            player1Id: updatedRoom.player1_id,
+            player2Id: updatedRoom.player2_id,
+            player1Team: parseTeam(p1Team),
+            player2Team: parseTeam(p2Team),
+            currentTurn: updatedRoom.player1_id
+          }
         });
       }
     }
@@ -569,22 +612,23 @@ export function setupWebSocketServer(port: number = 3001) {
       return;
     }
 
-    // Broadcast action to opponent
     const opponentId = room.player1_id === playerId ? room.player2_id : room.player1_id;
-    
-    broadcastToRoom(client.roomId, {
-      type: 'battle_update',
-      payload: { playerId, action, data, turnNumber: room.updated_at }
-    });
-
-    // Simple turn alternation for MVP
     if (opponentId) {
       roomOps.setCurrentTurn.run(opponentId, client.roomId);
     }
+    
+    broadcastToRoom(client.roomId, {
+      type: 'battle_update',
+      payload: { playerId, action, data, turnNumber: room.updated_at, currentTurn: opponentId }
+    });
   }
 
   function handleSwitchPokemon(ws: WebSocket, payload: any) {
-    handleBattleAction(ws, { ...payload, action: 'switch' });
+    handleBattleAction(ws, {
+      playerId: payload.playerId,
+      action: 'switch',
+      data: { pokemonId: payload.pokemonId }
+    });
   }
 
   function handleDisconnect(playerId: string) {

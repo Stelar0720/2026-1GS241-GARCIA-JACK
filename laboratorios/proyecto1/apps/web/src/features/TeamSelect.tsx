@@ -1,7 +1,7 @@
-// Sinnoh Edition - Team Select Screen with WebSocket
-import { useState, useEffect } from 'preact/hooks';
+// Sinnoh Edition - Team Select Screen with Generation Filter, Search and Cache
+import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Player } from '../App';
-import { fetchPokemon, shuffleArray, selectRandomMoves, CONFIG } from '../lib/api';
+import { CONFIG, fetchPokemon, fetchPokemonMoves, getCachedPokemon, setCachedPokemon, getPokemonSprite, getPokemonBackSprite } from '../lib/api';
 
 interface TeamSelectProps {
   player: Player;
@@ -14,44 +14,111 @@ interface PokemonData {
   name: string;
   types: string[];
   spriteFront: string;
-  spriteBack: string;
   moves: any[];
   stats: any;
 }
 
 export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: TeamSelectProps) {
   const [pokemons, setPokemons] = useState<PokemonData[]>([]);
+  const [filteredPokemons, setFilteredPokemons] = useState<PokemonData[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
-  const [showFillQuestion, setShowFillQuestion] = useState(true);
+  const [selectedPokemonMap, setSelectedPokemonMap] = useState<Record<number, PokemonData>>({});
+  const [selectedGen, setSelectedGen] = useState<number | null>(null); // null = ALL
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFillQuestion, setShowFillQuestion] = useState(false);
   const [timeLeft, setTimeLeft] = useState(CONFIG.GAME_CONFIG.TEAM_TIMEOUT);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const selectedRef = useRef<number[]>([]);
+  const selectedPokemonMapRef = useRef<Record<number, PokemonData>>({});
+  const submittingRef = useRef(false);
 
   useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+
+  useEffect(() => {
+    selectedPokemonMapRef.current = selectedPokemonMap;
+  }, [selectedPokemonMap]);
+
+  // Load pokemons by generation (when gen changes)
+  useEffect(() => {
     const loadPokemons = async () => {
-      const ids = Array.from({ length: 100 }, (_, i) => i + 1);
-      const loaded = await Promise.all(
-        ids.map(async (id) => {
-          if (bannedPokemon.includes(id.toString())) return null;
-          try {
-            return await fetchPokemon(id);
-          } catch {
-            return null;
+      setLoading(true);
+      
+      // Determine which generation to load
+      let gen;
+      if (selectedGen === null) {
+        // Load all pokemons for "ALL" - just first 200 for performance
+        gen = { min: 1, max: 200 };
+      } else {
+        gen = CONFIG.GENERATIONS.find(g => g.id === selectedGen);
+      }
+      
+      if (!gen) {
+        setLoading(false);
+        return;
+      }
+      
+      // Load lightweight pokemon data in parallel. Moves are fetched only for the final team.
+      const count = Math.min(gen.max - gen.min + 1, 80);
+      const ids: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const id = gen.min + i;
+        if (bannedPokemon.includes(id.toString())) continue;
+        ids.push(id);
+      }
+
+      const loadedPokemon = (await Promise.all(ids.map(async (id) => {
+        try {
+          let pokemon = getCachedPokemon(id);
+          if (!pokemon) {
+            pokemon = await fetchPokemon(id);
+            setCachedPokemon(id, pokemon);
           }
-        })
-      );
-      setPokemons(loaded.filter(Boolean) as PokemonData[]);
+          
+          if (pokemon) {
+            return {
+              id: pokemon.id,
+              name: pokemon.name,
+              types: pokemon.types?.map((t: any) => t.type?.name || t) || [],
+              spriteFront: pokemon.spriteFront || pokemon.sprites?.front_default || getPokemonSprite(pokemon.id),
+              moves: pokemon.moves || [],
+              stats: pokemon.stats || {},
+            };
+          }
+        } catch (error) {
+          console.error(`Error loading pokemon ${id}:`, error);
+        }
+        return null;
+      }))).filter(Boolean) as PokemonData[];
+      
+      setPokemons(loadedPokemon);
+      setFilteredPokemons(loadedPokemon);
       setLoading(false);
     };
     loadPokemons();
-  }, [bannedPokemon]);
+  }, [selectedGen, bannedPokemon.length]);
+
+  // Filter by search only (generation filtering happens during load)
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredPokemons(pokemons);
+    } else {
+      const query = searchQuery.toLowerCase().trim();
+      const filtered = pokemons.filter(p => 
+        p.name.toLowerCase().includes(query) ||
+        p.id.toString().includes(query)
+      );
+      setFilteredPokemons(filtered);
+    }
+  }, [searchQuery, pokemons]);
 
   useEffect(() => {
-    if (showFillQuestion || selected.length === 0) return;
-    
     const timer = setInterval(() => {
       setTimeLeft(t => {
         if (t <= 1) {
-          handleRandomFill();
+          submitRandomTeam(true);
           return 0;
         }
         return t - 1;
@@ -59,51 +126,87 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [showFillQuestion, selected.length > 0]);
+  }, []);
 
   const togglePokemon = (id: number) => {
     if (selected.includes(id)) {
       setSelected(selected.filter(i => i !== id));
+      setSelectedPokemonMap(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } else if (selected.length < CONFIG.GAME_CONFIG.MAX_POKEMON) {
+      const pokemon = pokemons.find(p => p.id === id);
       setSelected([...selected, id]);
+      if (pokemon) {
+        setSelectedPokemonMap(prev => ({ ...prev, [id]: pokemon }));
+      }
     }
   };
 
-  const handleRandomFill = () => {
+  const getRandomIds = (fillExisting: boolean) => {
     const available = pokemons.filter(p => !selected.includes(p.id));
-    const shuffled = shuffleArray(available);
-    const needed = CONFIG.GAME_CONFIG.MAX_POKEMON - selected.length;
+    const shuffled = [...available].sort(() => Math.random() - 0.5);
+    const base = fillExisting ? selectedRef.current : [];
+    const needed = CONFIG.GAME_CONFIG.MAX_POKEMON - base.length;
     const toAdd = shuffled.slice(0, needed);
-    setSelected([...selected, ...toAdd.map(p => p.id)]);
-    setShowFillQuestion(false);
+    const ids = [...base, ...toAdd.map(p => p.id)];
+    const mapped = Object.fromEntries([
+      ...Object.entries(fillExisting ? selectedPokemonMapRef.current : {}),
+      ...toAdd.map(p => [p.id, p]),
+    ]);
+    setSelected(ids);
+    setSelectedPokemonMap(mapped as Record<number, PokemonData>);
+    return { ids, mapped: mapped as Record<number, PokemonData> };
   };
 
-  const handleStartBattle = () => {
-    if (selected.length < CONFIG.GAME_CONFIG.MIN_POKEMON) return;
+  const submitRandomTeam = (fillExisting = false) => {
+    if (submittingRef.current) return;
+    const { ids, mapped } = getRandomIds(fillExisting);
+    handleStartBattle(ids, mapped);
+  };
+
+  const handleRandomFill = () => {
+    submitRandomTeam(true);
+  };
+
+  const handleStartBattle = async (
+    teamIds = selectedRef.current,
+    pokemonMap = selectedPokemonMapRef.current
+  ) => {
+    if (teamIds.length < CONFIG.GAME_CONFIG.MIN_POKEMON || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     
-    const team = selected.map(id => {
-      const pokemon = pokemons.find(p => p.id === id);
+    const team = (await Promise.all(teamIds.map(async (id) => {
+      const pokemon = pokemonMap[id] || pokemons.find(p => p.id === id);
       if (!pokemon) return null;
+
+      const movesResponse = await fetchPokemonMoves(id).catch(() => ({ moves: [] }));
+      const availableMoves = movesResponse.moves?.length ? movesResponse.moves : getFallbackMoves(pokemon.types);
+      const moves = [...availableMoves].sort(() => Math.random() - 0.5).slice(0, 4);
       
-      const moves = selectRandomMoves(pokemon.moves || [], 4);
+      const stats = normalizeStats(pokemon.stats);
       
       return {
         id: pokemon.id,
         name: pokemon.name,
         types: pokemon.types,
         spriteFront: pokemon.spriteFront,
-        spriteBack: pokemon.spriteBack,
-        stats: pokemon.stats,
+        spriteBack: getPokemonBackSprite(pokemon.id),
+        stats,
         moves,
-        currentHp: pokemon.stats.hp,
-        maxHp: pokemon.stats.hp,
+        currentHp: stats.hp,
+        maxHp: stats.hp,
         status: 'none',
         isActive: false,
         isFainted: false,
       };
-    }).filter(Boolean);
+    }))).filter(Boolean);
 
     onTeamComplete(team);
+    setSubmitting(false);
   };
 
   return (
@@ -119,71 +222,135 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
           </div>
         </div>
 
-        <div class="team-panel">
+        {/* Team slots */}
+        <div class="team-panel" style={{ marginBottom: '12px' }}>
           {Array.from({ length: 6 }, (_, i) => {
             const pokemonId = selected[i];
-            const pokemon = pokemonId ? pokemons.find(p => p.id === pokemonId) : null;
+            const pokemon = pokemonId ? selectedPokemonMap[pokemonId] : null;
             return (
               <div 
                 key={i}
                 class={`team-slot ${pokemon ? 'filled' : ''}`}
                 onClick={() => pokemon && togglePokemon(pokemon.id)}
+                style={{
+                  background: pokemon ? '#1a1a2e' : '#0a0a1e',
+                  borderColor: pokemon ? '#e0c030' : '#4a4a8a',
+                }}
               >
-                {pokemon && (
-                  <img 
-                    src={pokemon.spriteFront}
-                    alt={pokemon.name}
-                    style={{ width: '48px', height: '48px', imageRendering: 'pixelated' }}
-                  />
+                {pokemon ? (
+                  <>
+                    <img 
+                      src={pokemon.spriteFront}
+                      alt={pokemon.name}
+                      style={{ width: '48px', height: '48px', imageRendering: 'pixelated' }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = getPokemonSprite(pokemon.id);
+                      }}
+                    />
+                    <span style={{ fontSize: '7px', color: '#a8a8c8' }}>{pokemon.name.substring(0, 8)}</span>
+                  </>
+                ) : (
+                  <span style={{ fontSize: '16px', color: '#4a4a8a' }}>?</span>
                 )}
               </div>
             );
           })}
         </div>
 
-        <p style={{ textAlign: 'center', fontSize: '9px', margin: '12px 0', color: '#a8a8c8' }}>
+        <p style={{ textAlign: 'center', fontSize: '9px', margin: '8px 0', color: '#a8a8c8' }}>
           {selected.length}/{CONFIG.GAME_CONFIG.MAX_POKEMON} Pokémon seleccionados
         </p>
 
+        {/* Search */}
+        <input
+          type="text"
+          class="ds-input"
+          placeholder="Buscar por nombre o ID..."
+          value={searchQuery}
+          onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
+          style={{ marginBottom: '8px', width: '100%' }}
+        />
+
+        {/* Generation Filter */}
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <button
+            class={`ds-button ${selectedGen === null ? 'gold' : ''}`}
+            onClick={() => setSelectedGen(null)}
+            style={{ fontSize: '8px', padding: '4px 8px', minWidth: 'auto' }}
+          >
+            TODOS
+          </button>
+          {CONFIG.GENERATIONS.map(gen => (
+            <button
+              key={gen.id}
+              class={`ds-button ${selectedGen === gen.id ? 'gold' : ''}`}
+              onClick={() => setSelectedGen(gen.id)}
+              style={{ fontSize: '8px', padding: '4px 8px', minWidth: 'auto' }}
+            >
+              {gen.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Fill Question */}
         {showFillQuestion && selected.length > 0 && selected.length < CONFIG.GAME_CONFIG.MAX_POKEMON && (
-          <div class="ds-textbox" style={{ marginBottom: '16px' }}>
-            <p style={{ fontSize: '9px', textAlign: 'center', marginBottom: '12px' }}>
+          <div class="ds-textbox" style={{ marginBottom: '12px' }}>
+            <p style={{ fontSize: '9px', textAlign: 'center', marginBottom: '8px' }}>
               ¿Deseas rellenar el equipo automáticamente?
             </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button class="ds-button gold" onClick={handleRandomFill}>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+              <button class="ds-button gold" onClick={handleRandomFill} style={{ fontSize: '9px' }}>
                 SÍ, RELLENAR
               </button>
-              <button class="ds-button" onClick={() => setShowFillQuestion(false)}>
+              <button class="ds-button" onClick={() => setShowFillQuestion(false)} style={{ fontSize: '9px' }}>
                 NO, JUGAR ASÍ
               </button>
             </div>
           </div>
         )}
 
+        {/* Pokemon Grid */}
         {!loading ? (
-          <div class="pokemon-grid" style={{ maxHeight: '250px' }}>
-            {pokemons.map((pokemon) => (
-              <div
-                key={pokemon.id}
-                class={`pokemon-card ${selected.includes(pokemon.id) ? 'selected' : ''}`}
-                onClick={() => togglePokemon(pokemon.id)}
-              >
-                <img src={pokemon.spriteFront} alt={pokemon.name} class="pokemon-sprite" />
-                <p class="pokemon-name">{pokemon.name}</p>
-                <div class="pokemon-types">
-                  {pokemon.types.map((type: string) => (
-                    <span 
-                      key={type}
-                      class="type-badge"
-                      style={{ background: getTypeColor(type) }}
-                    >
-                      {type.substring(0, 3).toUpperCase()}
-                    </span>
-                  ))}
-                </div>
+          <div class="pokemon-grid" style={{ maxHeight: '220px' }}>
+            {filteredPokemons.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#a8a8c8' }}>
+                No se encontraron Pokémon
               </div>
-            ))}
+            ) : (
+              filteredPokemons.map((pokemon) => (
+                <div
+                  key={pokemon.id}
+                  class={`pokemon-card ${selected.includes(pokemon.id) ? 'selected' : ''}`}
+                  onClick={() => togglePokemon(pokemon.id)}
+                  style={{
+                    borderColor: selected.includes(pokemon.id) ? '#78c850' : undefined,
+                    opacity: bannedPokemon.includes(pokemon.id.toString()) ? 0.4 : 1,
+                  }}
+                >
+                  <img 
+                    src={pokemon.spriteFront}
+                    alt={pokemon.name} 
+                    class="pokemon-sprite"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = getPokemonSprite(pokemon.id);
+                    }}
+                  />
+                  <p class="pokemon-name">{pokemon.name}</p>
+                  <p style={{ fontSize: '7px', color: '#a8a8c8' }}>#{pokemon.id}</p>
+                  <div class="pokemon-types">
+                    {pokemon.types.map((type: string) => (
+                      <span 
+                        key={type}
+                        class="type-badge"
+                        style={{ background: getTypeColor(type) }}
+                      >
+                        {type.substring(0, 3).toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         ) : (
           <div class="loading" style={{ textAlign: 'center', padding: '40px' }}>
@@ -191,25 +358,72 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
           </div>
         )}
 
-        <div class="nav-buttons">
+        <div class="nav-buttons" style={{ marginTop: '12px' }}>
+          <button
+            class="ds-button gold"
+            onClick={() => submitRandomTeam(false)}
+            disabled={submitting || loading}
+          >
+            RANDOM
+          </button>
           <button 
             class="ds-button"
-            onClick={() => setSelected([])}
+            onClick={() => {
+              setSelected([]);
+              setSelectedPokemonMap({});
+            }}
             disabled={selected.length === 0}
           >
             LIMPIAR
           </button>
           <button 
-            class="ds-button gold"
-            onClick={handleStartBattle}
-            disabled={selected.length < CONFIG.GAME_CONFIG.MIN_POKEMON}
+            class="ds-button"
+            onClick={() => handleStartBattle()}
+            disabled={selected.length < CONFIG.GAME_CONFIG.MIN_POKEMON || submitting}
           >
-            LISTO
+            {submitting ? 'PREPARANDO...' : `JUGAR (${selected.length})`}
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function normalizeStats(stats: any) {
+  if (!Array.isArray(stats)) {
+    return {
+      hp: stats?.hp || 100,
+      attack: stats?.attack || 100,
+      defense: stats?.defense || 100,
+      specialAttack: stats?.specialAttack || stats?.['special-attack'] || 100,
+      specialDefense: stats?.specialDefense || stats?.['special-defense'] || 100,
+      speed: stats?.speed || 100,
+    };
+  }
+
+  const statMap: Record<string, number> = {};
+  stats.forEach((s: any) => {
+    statMap[s.stat?.name || s.name] = s.base_stat || s.value || 100;
+  });
+
+  return {
+    hp: statMap.hp || 100,
+    attack: statMap.attack || 100,
+    defense: statMap.defense || 100,
+    specialAttack: statMap['special-attack'] || 100,
+    specialDefense: statMap['special-defense'] || 100,
+    speed: statMap.speed || 100,
+  };
+}
+
+function getFallbackMoves(types: string[]) {
+  const primaryType = types[0] || 'normal';
+  return [
+    { id: 1, name: 'Tackle', type: 'normal', power: 40, accuracy: 100, pp: 35, maxPp: 35 },
+    { id: 2, name: 'Quick Attack', type: 'normal', power: 40, accuracy: 100, pp: 30, maxPp: 30 },
+    { id: 3, name: `${primaryType.charAt(0).toUpperCase()}${primaryType.slice(1)} Strike`, type: primaryType, power: 50, accuracy: 100, pp: 25, maxPp: 25 },
+    { id: 4, name: 'Swift', type: 'normal', power: 60, accuracy: 100, pp: 20, maxPp: 20 },
+  ];
 }
 
 function getTypeColor(type: string): string {

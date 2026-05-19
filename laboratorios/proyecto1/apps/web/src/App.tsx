@@ -36,6 +36,8 @@ export interface GameStore {
   timeRemaining: number;
   player1Bans: number;
   player2Bans: number;
+  currentBattleTurn: string | null;
+  lastBattleUpdate: any | null;
 }
 
 export interface Room {
@@ -65,6 +67,8 @@ export function App() {
     timeRemaining: 60,
     player1Bans: 0,
     player2Bans: 0,
+    currentBattleTurn: null,
+    lastBattleUpdate: null,
   });
 
   const connectPlayer = (player: Player) => {
@@ -186,7 +190,11 @@ export function App() {
         break;
 
       case 'team_selected':
-        // Opponent selected their team
+        setStore(s => (
+          msg.payload.playerId !== s.player?.id && msg.payload.team
+            ? { ...s, opponentTeam: msg.payload.team }
+            : s
+        ));
         break;
 
       case 'battle_update':
@@ -247,7 +255,21 @@ export function App() {
         break;
       
       case 'pre_battle':
-        setStore(s => ({ ...s, gamePhase: 'pre_battle', screen: 'battle' }));
+        setStore(s => {
+          const isPlayer1 = s.player?.id === payload.player1Id;
+          const playerTeam = isPlayer1 ? payload.player1Team : payload.player2Team;
+          const opponentTeam = isPlayer1 ? payload.player2Team : payload.player1Team;
+
+          return {
+            ...s,
+            gamePhase: 'pre_battle',
+            screen: 'battle',
+            playerTeam: playerTeam?.length ? playerTeam : s.playerTeam,
+            opponentTeam: opponentTeam?.length ? opponentTeam : s.opponentTeam,
+            currentBattleTurn: payload.currentTurn || null,
+            lastBattleUpdate: null,
+          };
+        });
         break;
       
       case 'battle':
@@ -261,8 +283,12 @@ export function App() {
   };
 
   const handleBattleUpdate = (payload: any) => {
-    // Handle battle actions from opponent
     console.log('Battle update:', payload);
+    setStore(s => ({
+      ...s,
+      currentBattleTurn: payload.currentTurn || s.currentBattleTurn,
+      lastBattleUpdate: { ...payload, receivedAt: Date.now() },
+    }));
   };
 
   const updateStore = (updates: Partial<GameStore>) => {
@@ -350,6 +376,8 @@ export function App() {
             player={store.player}
             playerTeam={store.playerTeam}
             opponentTeam={store.opponentTeam}
+            currentTurn={store.currentBattleTurn}
+            battleUpdate={store.lastBattleUpdate}
             onBattleEnd={() => goToScreen('results')}
             onAttack={(action, data) => wsActions.battleAction(store.player!.id, action, data)}
             onSwitch={(pokemonId) => wsActions.switchPokemon(store.player!.id, pokemonId)}
@@ -373,6 +401,8 @@ export function App() {
                 timeRemaining: 60,
                 player1Bans: 0,
                 player2Bans: 0,
+                currentBattleTurn: null,
+                lastBattleUpdate: null,
               });
             }}
           />
