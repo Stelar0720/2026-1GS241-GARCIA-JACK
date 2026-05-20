@@ -1,7 +1,7 @@
 // Sinnoh Edition - Ban Phase Screen with Filters and Search
 import { useState, useEffect } from 'preact/hooks';
 import type { Player, Room } from '../App';
-import { CONFIG, fetchPokemon, getCachedPokemon, setCachedPokemon, getPokemonSprite } from '../lib/api';
+import { CONFIG, fetchPokemon, getCachedPokemon, searchPokemon, setCachedPokemon, getPokemonSprite } from '../lib/api';
 
 interface BanPhaseProps {
   player: Player;
@@ -40,7 +40,7 @@ export function BanPhase({
   const [timeLeft, setTimeLeft] = useState(timeRemaining);
   const [selectedGen, setSelectedGen] = useState<number | null>(null); // null = ALL
   const [searchQuery, setSearchQuery] = useState('');
-  const maxBans = 3;
+  const maxBans = 6;
 
   const isMyTurn = currentBanTurn === player.id;
 
@@ -55,8 +55,7 @@ export function BanPhase({
       // Determine which generation range to load
       let genRange;
       if (selectedGen === null) {
-        // Load first 200 pokemons for "ALL" (performance)
-        genRange = { min: 1, max: 200 };
+        genRange = { min: 1, max: 493 };
       } else {
         const gen = CONFIG.GENERATIONS.find(g => g.id === selectedGen);
         if (!gen) {
@@ -67,7 +66,7 @@ export function BanPhase({
       }
       
       // Load lightweight pokemon data in parallel; this keeps the ban phase responsive.
-      const count = Math.min(genRange.max - genRange.min + 1, 80);
+      const count = Math.min(genRange.max - genRange.min + 1, 150);
       const ids: number[] = [];
       for (let i = 0; i < count; i++) {
         const id = genRange.min + i;
@@ -104,19 +103,50 @@ export function BanPhase({
     loadPokemons();
   }, [selectedGen, bannedPokemon.length]);
 
-  // Filter by search
   useEffect(() => {
+    let cancelled = false;
+
     if (!searchQuery.trim()) {
       setFilteredPokemons(pokemons);
-    } else {
-      const query = searchQuery.toLowerCase().trim();
-      const filtered = pokemons.filter(p => 
+      return;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    const filtered = pokemons.filter(p =>
         p.name.toLowerCase().includes(query) ||
         p.id.toString().includes(query)
-      );
-      setFilteredPokemons(filtered);
+    );
+    setFilteredPokemons(filtered);
+
+    const loadSearchResult = async () => {
+      try {
+        const rawPokemon = /^\d+$/.test(query)
+          ? await fetchPokemon(Number(query))
+          : await searchPokemon(query);
+        if (!rawPokemon || bannedPokemon.includes(String(rawPokemon.id)) || cancelled) return;
+
+        const pokemon = {
+          id: rawPokemon.id,
+          name: rawPokemon.name,
+          types: rawPokemon.types?.map((t: any) => t.type?.name || t) || [],
+          spriteFront: rawPokemon.spriteFront || rawPokemon.sprites?.front_default || getPokemonSprite(rawPokemon.id),
+        };
+        setCachedPokemon(pokemon.id, rawPokemon);
+        setFilteredPokemons(current => current.some(p => p.id === pokemon.id) ? current : [pokemon, ...current]);
+        setPokemons(current => current.some(p => p.id === pokemon.id) ? current : [pokemon, ...current]);
+      } catch {
+        // Keep local filtered results if remote search has no match.
+      }
+    };
+
+    if (query.length >= 2 || /^\d+$/.test(query)) {
+      loadSearchResult();
     }
-  }, [searchQuery, pokemons]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchQuery, bannedPokemon.length]);
 
   const handleBan = (pokemonId: string) => {
     if (!isMyTurn) return;
@@ -133,7 +163,7 @@ export function BanPhase({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const allBansComplete = bannedPokemon.length >= 6;
+  const allBansComplete = bannedPokemon.length >= maxBans * 2;
 
   return (
     <div class="screen ban-phase">
@@ -189,7 +219,7 @@ export function BanPhase({
           <div style={{ textAlign: 'center' }}>
             <span style={{ fontSize: '9px', color: '#a8a8c8' }}>PROGRESO</span>
             <p style={{ fontSize: '20px', color: '#e0c030', margin: '4px 0' }}>
-              {bannedPokemon.length}/6
+              {bannedPokemon.length}/{maxBans * 2}
             </p>
             <div style={{ display: 'flex', gap: '8px', fontSize: '10px' }}>
               <span style={{ color: '#78c850' }}>P1: {player1Bans}</span>
@@ -245,6 +275,9 @@ export function BanPhase({
         </div>
 
         <div class="ds-textbox" style={{ marginBottom: '12px' }}>
+          <p style={{ fontSize: '10px', textAlign: 'center', color: '#e0c030', marginBottom: '6px' }}>
+            Hola, {player.name}. Prepara tus bans para abrir el camino al titulo.
+          </p>
           <p style={{ fontSize: '10px', textAlign: 'center' }}>
             {isMyTurn 
               ? `Banea ${maxBans - myBans.length} Pokémon`

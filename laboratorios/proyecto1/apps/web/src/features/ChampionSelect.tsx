@@ -1,54 +1,94 @@
-// Sinnoh Edition - Champion Select Screen with Region Selection
-import { useState } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
 import type { Player } from '../App';
-import { generatePlayerId, getTrainerSprite, saveLocalStorage, REGIONS } from '../lib/api';
+import { generatePlayerId, saveLocalStorage } from '../lib/api';
 
 interface ChampionSelectProps {
   player: Player | null;
   onComplete: (player: Player) => void;
 }
 
+type Gender = 'male' | 'female' | 'other';
+
+interface TrainerSprite {
+  id: string;
+  name: string;
+  genderGroup: 'hombre' | 'mujer';
+  url: string;
+}
+
+const spriteModules = import.meta.glob('../../../../sprites/**/*.{gif,png,GIF,PNG}', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+const TRAINER_SPRITES: TrainerSprite[] = Object.entries(spriteModules)
+  .map(([path, url]) => {
+    const normalizedPath = path.replace(/\\/g, '/');
+    const genderGroup = normalizedPath.includes('/hombre/') ? 'hombre' : normalizedPath.includes('/mujer/') ? 'mujer' : null;
+    if (!genderGroup) return null;
+
+    const fileName = normalizedPath.split('/').pop() || 'sprite';
+    const name = decodeURIComponent(fileName.replace(/\.(gif|png)$/i, '').replace(/_/g, ' '));
+
+    return {
+      id: normalizedPath,
+      name,
+      genderGroup,
+      url,
+    };
+  })
+  .filter(Boolean) as TrainerSprite[];
+
 export function ChampionSelect({ player, onComplete }: ChampionSelectProps) {
   const [name, setName] = useState(player?.name || '');
-  const [gender, setGender] = useState<'male' | 'female' | 'other'>(player?.gender || 'male');
-  const [region, setRegion] = useState('sinnoh');
-  const [step, setStep] = useState<'name' | 'region' | 'gender' | 'confirm'>('name');
+  const [gender, setGender] = useState<Gender>(player?.gender || 'male');
+  const [selectedSpriteUrl, setSelectedSpriteUrl] = useState(player?.spriteUrl || '');
+  const [step, setStep] = useState<'name' | 'gender' | 'sprite' | 'confirm'>('name');
+
+  const availableSprites = useMemo(() => {
+    if (gender === 'male') return TRAINER_SPRITES.filter(sprite => sprite.genderGroup === 'hombre');
+    if (gender === 'female') return TRAINER_SPRITES.filter(sprite => sprite.genderGroup === 'mujer');
+    return TRAINER_SPRITES;
+  }, [gender]);
+
+  const selectedSprite = availableSprites.find(sprite => sprite.url === selectedSpriteUrl) || availableSprites[0] || null;
 
   const handleNameSubmit = () => {
     if (name.trim().length >= 2) {
-      setStep('region');
+      setStep('gender');
     }
   };
 
-  const handleRegionSelect = (r: string) => {
-    setRegion(r);
-    setStep('gender');
+  const handleGenderSelect = (nextGender: Gender) => {
+    setGender(nextGender);
+    setSelectedSpriteUrl('');
+    setStep('sprite');
   };
 
-  const handleGenderSelect = (g: 'male' | 'female' | 'other') => {
-    setGender(g);
+  const handleSpriteSelect = (spriteUrl: string) => {
+    setSelectedSpriteUrl(spriteUrl);
     setStep('confirm');
   };
 
   const handleConfirm = () => {
-    const spriteUrl = getTrainerSprite(gender, region);
+    if (!selectedSprite) return;
+
     const newPlayer: Player = {
       id: player?.id || generatePlayerId(),
       name: name.trim(),
       gender,
-      spriteUrl,
+      spriteUrl: selectedSprite.url,
     };
     saveLocalStorage('player', newPlayer);
     onComplete(newPlayer);
   };
 
-  const trainerSprite = getTrainerSprite(gender, region);
-
   return (
     <div class="screen champion-select">
       <div class="ds-panel">
         <h2 style={{ fontSize: '14px', textAlign: 'center', marginBottom: '20px', color: '#e0c030' }}>
-          SELECCIONA A TU CAMPEÓN
+          SELECCIONA A TU CAMPEON
         </h2>
 
         {step === 'name' && (
@@ -64,104 +104,109 @@ export function ChampionSelect({ player, onComplete }: ChampionSelectProps) {
               style={{ marginBottom: '16px' }}
             />
             <div class="nav-buttons">
-              <button 
-                class="ds-button gold"
-                onClick={handleNameSubmit}
-                disabled={name.trim().length < 2}
-              >
+              <button class="ds-button gold" onClick={handleNameSubmit} disabled={name.trim().length < 2}>
                 CONTINUAR
               </button>
             </div>
           </div>
         )}
 
-        {step === 'region' && (
-          <div class="ds-textbox">
-            <p style={{ marginBottom: '16px', textAlign: 'center' }}>Selecciona tu región favorita:</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginTop: '16px' }}>
-              {REGIONS.map((r) => (
-                <button
-                  key={r.id}
-                  class={`ds-button ${region === r.id ? 'gold' : ''}`}
-                  onClick={() => handleRegionSelect(r.id)}
-                  style={{
-                    borderLeft: `4px solid ${r.color}`,
-                  }}
-                >
-                  {r.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {step === 'gender' && (
           <div class="ds-textbox">
-            <p style={{ marginBottom: '16px' }}>Selecciona tu género:</p>
-            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '20px' }}>
-              <button 
-                class={`ds-button ${gender === 'male' ? 'gold' : ''}`}
-                onClick={() => handleGenderSelect('male')}
-              >
+            <p style={{ marginBottom: '16px' }}>Selecciona tu genero:</p>
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '20px', flexWrap: 'wrap' }}>
+              <button class={`ds-button ${gender === 'male' ? 'gold' : ''}`} onClick={() => handleGenderSelect('male')}>
                 HOMBRE
               </button>
-              <button 
-                class={`ds-button ${gender === 'female' ? 'gold' : ''}`}
-                onClick={() => handleGenderSelect('female')}
-              >
+              <button class={`ds-button ${gender === 'female' ? 'gold' : ''}`} onClick={() => handleGenderSelect('female')}>
                 MUJER
               </button>
-              <button 
-                class={`ds-button ${gender === 'other' ? 'gold' : ''}`}
-                onClick={() => handleGenderSelect('other')}
-              >
+              <button class={`ds-button ${gender === 'other' ? 'gold' : ''}`} onClick={() => handleGenderSelect('other')}>
                 OTRO
               </button>
             </div>
           </div>
         )}
 
-        {step === 'confirm' && (
+        {step === 'sprite' && (
+          <div class="ds-textbox">
+            <p style={{ marginBottom: '16px', textAlign: 'center' }}>Elige tu personaje:</p>
+            {availableSprites.length === 0 ? (
+              <p style={{ fontSize: '9px', color: '#c03030', textAlign: 'center' }}>
+                No hay sprites disponibles para esta opcion.
+              </p>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))',
+                gap: '10px',
+                maxHeight: '320px',
+                overflow: 'auto',
+              }}>
+                {availableSprites.map(sprite => (
+                  <button
+                    key={sprite.id}
+                    class={`ds-button ${selectedSpriteUrl === sprite.url ? 'gold' : ''}`}
+                    onClick={() => handleSpriteSelect(sprite.url)}
+                    style={{ padding: '8px', minWidth: 'auto' }}
+                  >
+                    <img
+                      src={sprite.url}
+                      alt={sprite.name}
+                      style={{
+                        width: '72px',
+                        height: '72px',
+                        objectFit: 'contain',
+                        imageRendering: sprite.url.toLowerCase().endsWith('.gif') ? 'auto' : 'pixelated',
+                        display: 'block',
+                        margin: '0 auto 6px',
+                      }}
+                    />
+                    <span style={{ display: 'block', fontSize: '7px', color: '#a8a8c8', overflowWrap: 'anywhere' }}>
+                      {sprite.name.substring(0, 18)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div class="nav-buttons" style={{ marginTop: '16px' }}>
+              <button class="ds-button" onClick={() => setStep('gender')}>
+                ATRAS
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'confirm' && selectedSprite && (
           <div class="ds-textbox">
             <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-              {/* Trainer sprite with fallback */}
               <div style={{
-                width: '96px',
-                height: '96px',
+                width: '112px',
+                height: '112px',
                 margin: '0 auto 16px',
-                background: REGIONS.find(r => r.id === region)?.color || '#b8c8d8',
+                background: '#1a1a2e',
                 borderRadius: '8px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 border: '2px solid #e0c030',
               }}>
-                <img 
-                  src={trainerSprite}
-                  alt="Trainer"
-                  style={{ 
-                    width: '96px', 
-                    height: '96px',
-                    imageRendering: 'auto',
-                  }}
+                <img
+                  src={selectedSprite.url}
+                  alt={selectedSprite.name}
+                  style={{ width: '96px', height: '96px', objectFit: 'contain' }}
                 />
               </div>
               <p style={{ fontSize: '14px', color: '#e0c030' }}>{name}</p>
               <p style={{ fontSize: '10px', color: '#a8a8c8', marginTop: '4px' }}>
-                {gender === 'male' ? 'Hombre' : gender === 'female' ? 'Mujer' : 'Otro'} - {REGIONS.find(r => r.id === region)?.name || 'Sinnoh'}
+                {gender === 'male' ? 'Hombre' : gender === 'female' ? 'Mujer' : 'Otro'} - {selectedSprite.name}
               </p>
             </div>
             <div class="nav-buttons">
-              <button 
-                class="ds-button"
-                onClick={() => setStep('name')}
-              >
-                ATRÁS
+              <button class="ds-button" onClick={() => setStep('sprite')}>
+                ATRAS
               </button>
-              <button 
-                class="ds-button gold"
-                onClick={handleConfirm}
-              >
+              <button class="ds-button gold" onClick={handleConfirm}>
                 CONFIRMAR
               </button>
             </div>

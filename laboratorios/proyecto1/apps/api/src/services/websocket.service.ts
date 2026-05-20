@@ -16,12 +16,13 @@ interface Message {
 
 // Constants
 const BAN_PHASE_TIMEOUT = 60; // seconds
-const BANS_PER_PLAYER = 3;
+const BANS_PER_PLAYER = 6;
 
 // Track ban phase timers per room
 const banTimers = new Map<string, NodeJS.Timeout>();
 const banTimeRemaining = new Map<string, number>();
 const banDecisionCounts = new Map<string, number>();
+const coinCallPlayers = new Map<string, string>();
 
 // Broadcast to all clients in a room
 function broadcastToRoom(roomId: string, message: Message, excludePlayerId?: string) {
@@ -86,6 +87,18 @@ function parseTeam(row: unknown): any[] {
   } catch {
     return [];
   }
+}
+
+function getPublicPlayer(playerId: string | null | undefined) {
+  if (!playerId) return null;
+  const row = playerOps.findById.get(playerId) as any;
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    gender: row.gender || 'other',
+    spriteUrl: row.sprite_url || '',
+  };
 }
 
 // Start ban phase timer
@@ -273,6 +286,10 @@ export function setupWebSocketServer(port: number = 3001) {
       case 'select_team':
         handleSelectTeam(ws, payload);
         break;
+
+      case 'call_coin':
+        handleCallCoin(ws, payload);
+        break;
       
       case 'battle_action':
         handleBattleAction(ws, payload);
@@ -370,13 +387,19 @@ export function setupWebSocketServer(port: number = 3001) {
     // Notify both players
     sendToPlayer(playerId, {
       type: 'room_joined',
-      payload: { roomId: room.id, code, status: 'waiting', player1Id: room.player1_id }
+      payload: {
+        roomId: room.id,
+        code,
+        status: 'waiting',
+        player1Id: room.player1_id,
+        opponent: getPublicPlayer(room.player1_id),
+      }
     });
 
     if (room.player1_id) {
       sendToPlayer(room.player1_id, {
         type: 'opponent_joined',
-        payload: { roomId: room.id, opponentId: playerId }
+        payload: { roomId: room.id, opponentId: playerId, opponent: getPublicPlayer(playerId) }
       });
     }
   }
@@ -531,7 +554,7 @@ export function setupWebSocketServer(port: number = 3001) {
       }
     });
 
-    // Check if all bans complete (6 total - 3 per player)
+    // Check if all bans complete
     if (getBanDecisionCount(client.roomId) >= BANS_PER_PLAYER * 2) {
       advanceToTeamSelect(client.roomId);
     } else {
@@ -578,9 +601,8 @@ export function setupWebSocketServer(port: number = 3001) {
 
       if (p1Team && p2Team) {
         roomOps.updateStatus.run('pre_battle', client.roomId);
-        if (updatedRoom.player1_id) {
-          roomOps.setCurrentTurn.run(updatedRoom.player1_id, client.roomId);
-        }
+        const chooserPlayerId = updatedRoom.player1_id || '';
+        coinCallPlayers.set(client.roomId, chooserPlayerId);
         
         broadcastToRoom(client.roomId, {
           type: 'phase_change',
@@ -591,11 +613,51 @@ export function setupWebSocketServer(port: number = 3001) {
             player2Id: updatedRoom.player2_id,
             player1Team: parseTeam(p1Team),
             player2Team: parseTeam(p2Team),
-            currentTurn: updatedRoom.player1_id
+            currentTurn: null,
+            coinFlip: {
+              status: 'choosing',
+              chooserPlayerId,
+            }
           }
         });
       }
     }
+  }
+
+  function handleCallCoin(ws: WebSocket, payload: any) {
+    const { playerId, side } = payload;
+    const client = clients.get(playerId);
+    if (!client || !client.roomId) return;
+
+    const room = roomOps.findById.get(client.roomId) as RoomRow | undefined;
+    if (!room || room.status !== 'pre_battle') return;
+
+    const chooserPlayerId = coinCallPlayers.get(client.roomId) || room.player1_id;
+    if (playerId !== chooserPlayerId) {
+      sendToPlayer(playerId, { type: 'error', payload: { message: 'Only the caller can choose coin side' } });
+      return;
+    }
+
+    const calledSide = side === 'charizard' ? 'charizard' : 'red';
+    const resultSide = Math.random() < 0.5 ? 'red' : 'charizard';
+    const opponentId = room.player1_id === playerId ? room.player2_id : room.player1_id;
+    const startingPlayerId = resultSide === calledSide ? playerId : opponentId;
+    if (!startingPlayerId) return;
+
+    coinCallPlayers.delete(client.roomId);
+    roomOps.setCurrentTurn.run(startingPlayerId, client.roomId);
+
+    broadcastToRoom(client.roomId, {
+      type: 'coin_flip_result',
+      payload: {
+        roomId: client.roomId,
+        chooserPlayerId: playerId,
+        calledSide,
+        side: resultSide,
+        startingPlayerId,
+        currentTurn: startingPlayerId,
+      }
+    });
   }
 
   function handleBattleAction(ws: WebSocket, payload: any) {

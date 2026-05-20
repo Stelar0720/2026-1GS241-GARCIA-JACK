@@ -1,5 +1,5 @@
 // Sinnoh Edition - Lobby Screen with WebSocket
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { Player, Room } from '../App';
 
 interface LobbyProps {
@@ -17,6 +17,11 @@ export function Lobby({ player, room, opponent, isOpponentReady, onCreateRoom, o
   const [mode, setMode] = useState<'select' | 'create' | 'join'>('select');
   const [joinCode, setJoinCode] = useState('');
   const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    setIsReady(false);
+    if (!room) setMode('select');
+  }, [room?.id]);
 
   const handleJoinRoom = () => {
     if (joinCode.length === 6) {
@@ -145,9 +150,12 @@ export function Lobby({ player, room, opponent, isOpponentReady, onCreateRoom, o
                   {opponent ? (
                     <>
                       <img 
-                        src={opponent.spriteUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/trainer/ Lucas.png'} 
+                        src={opponent.spriteUrl}
                         alt="Opponent"
                         style={{ width: '48px', height: '48px', imageRendering: 'pixelated' }}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                        }}
                       />
                       <p style={{ fontSize: '9px', marginTop: '4px' }}>{opponent.name}</p>
                       {isOpponentReady && <p style={{ fontSize: '8px', color: '#78c850' }}>✓ LISTO</p>}

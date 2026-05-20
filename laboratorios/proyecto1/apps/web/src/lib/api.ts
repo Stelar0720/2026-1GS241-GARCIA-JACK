@@ -55,7 +55,7 @@ export const CONFIG = {
     MAX_POKEMON: 6,
     MIN_POKEMON: 1,
     BAN_LIMIT: 3,
-    TEAM_TIMEOUT: 60,
+    TEAM_TIMEOUT: 120,
     RANDOM_FILL: true,
     TESTING_GOD_MODE: false,
   },

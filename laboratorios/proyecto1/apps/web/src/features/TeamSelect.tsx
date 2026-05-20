@@ -1,7 +1,7 @@
 // Sinnoh Edition - Team Select Screen with Generation Filter, Search and Cache
 import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Player } from '../App';
-import { CONFIG, fetchPokemon, fetchPokemonMoves, getCachedPokemon, setCachedPokemon, getPokemonSprite, getPokemonBackSprite } from '../lib/api';
+import { CONFIG, fetchPokemon, fetchPokemonMoves, getCachedPokemon, searchPokemon, setCachedPokemon, getPokemonSprite, getPokemonBackSprite } from '../lib/api';
 
 interface TeamSelectProps {
   player: Player;
@@ -25,7 +25,6 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
   const [selectedPokemonMap, setSelectedPokemonMap] = useState<Record<number, PokemonData>>({});
   const [selectedGen, setSelectedGen] = useState<number | null>(null); // null = ALL
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFillQuestion, setShowFillQuestion] = useState(false);
   const [timeLeft, setTimeLeft] = useState(CONFIG.GAME_CONFIG.TEAM_TIMEOUT);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -49,8 +48,7 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
       // Determine which generation to load
       let gen;
       if (selectedGen === null) {
-        // Load all pokemons for "ALL" - just first 200 for performance
-        gen = { min: 1, max: 200 };
+        gen = { min: 1, max: 493 };
       } else {
         gen = CONFIG.GENERATIONS.find(g => g.id === selectedGen);
       }
@@ -61,7 +59,7 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
       }
       
       // Load lightweight pokemon data in parallel. Moves are fetched only for the final team.
-      const count = Math.min(gen.max - gen.min + 1, 80);
+      const count = Math.min(gen.max - gen.min + 1, 150);
       const ids: number[] = [];
       for (let i = 0; i < count; i++) {
         const id = gen.min + i;
@@ -100,19 +98,45 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
     loadPokemons();
   }, [selectedGen, bannedPokemon.length]);
 
-  // Filter by search only (generation filtering happens during load)
   useEffect(() => {
+    let cancelled = false;
+
     if (!searchQuery.trim()) {
       setFilteredPokemons(pokemons);
-    } else {
-      const query = searchQuery.toLowerCase().trim();
-      const filtered = pokemons.filter(p => 
+      return;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    const filtered = pokemons.filter(p =>
         p.name.toLowerCase().includes(query) ||
         p.id.toString().includes(query)
-      );
-      setFilteredPokemons(filtered);
+    );
+    setFilteredPokemons(filtered);
+
+    const loadSearchResult = async () => {
+      try {
+        const rawPokemon = /^\d+$/.test(query)
+          ? await fetchPokemon(Number(query))
+          : await searchPokemon(query);
+        if (!rawPokemon || bannedPokemon.includes(String(rawPokemon.id)) || cancelled) return;
+
+        const pokemon = toPokemonData(rawPokemon);
+        setCachedPokemon(pokemon.id, rawPokemon);
+        setFilteredPokemons(current => current.some(p => p.id === pokemon.id) ? current : [pokemon, ...current]);
+        setPokemons(current => current.some(p => p.id === pokemon.id) ? current : [pokemon, ...current]);
+      } catch {
+        // Keep local filtered results when remote search has no match.
+      }
+    };
+
+    if (query.length >= 2 || /^\d+$/.test(query)) {
+      loadSearchResult();
     }
-  }, [searchQuery, pokemons]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchQuery, pokemons, bannedPokemon]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -145,8 +169,8 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
     }
   };
 
-  const getRandomIds = (fillExisting: boolean) => {
-    const available = pokemons.filter(p => !selected.includes(p.id));
+  const randomizeSelection = (fillExisting: boolean) => {
+    const available = pokemons.filter(p => !selectedRef.current.includes(p.id));
     const shuffled = [...available].sort(() => Math.random() - 0.5);
     const base = fillExisting ? selectedRef.current : [];
     const needed = CONFIG.GAME_CONFIG.MAX_POKEMON - base.length;
@@ -163,12 +187,8 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
 
   const submitRandomTeam = (fillExisting = false) => {
     if (submittingRef.current) return;
-    const { ids, mapped } = getRandomIds(fillExisting);
+    const { ids, mapped } = randomizeSelection(fillExisting);
     handleStartBattle(ids, mapped);
-  };
-
-  const handleRandomFill = () => {
-    submitRandomTeam(true);
   };
 
   const handleStartBattle = async (
@@ -292,23 +312,6 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
           ))}
         </div>
 
-        {/* Fill Question */}
-        {showFillQuestion && selected.length > 0 && selected.length < CONFIG.GAME_CONFIG.MAX_POKEMON && (
-          <div class="ds-textbox" style={{ marginBottom: '12px' }}>
-            <p style={{ fontSize: '9px', textAlign: 'center', marginBottom: '8px' }}>
-              ¿Deseas rellenar el equipo automáticamente?
-            </p>
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-              <button class="ds-button gold" onClick={handleRandomFill} style={{ fontSize: '9px' }}>
-                SÍ, RELLENAR
-              </button>
-              <button class="ds-button" onClick={() => setShowFillQuestion(false)} style={{ fontSize: '9px' }}>
-                NO, JUGAR ASÍ
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Pokemon Grid */}
         {!loading ? (
           <div class="pokemon-grid" style={{ maxHeight: '220px' }}>
@@ -361,7 +364,7 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
         <div class="nav-buttons" style={{ marginTop: '12px' }}>
           <button
             class="ds-button gold"
-            onClick={() => submitRandomTeam(false)}
+            onClick={() => randomizeSelection(false)}
             disabled={submitting || loading}
           >
             RANDOM
@@ -413,6 +416,17 @@ function normalizeStats(stats: any) {
     specialAttack: statMap['special-attack'] || 100,
     specialDefense: statMap['special-defense'] || 100,
     speed: statMap.speed || 100,
+  };
+}
+
+function toPokemonData(pokemon: any): PokemonData {
+  return {
+    id: pokemon.id,
+    name: pokemon.name,
+    types: pokemon.types?.map((t: any) => t.type?.name || t) || [],
+    spriteFront: pokemon.spriteFront || pokemon.sprites?.front_default || getPokemonSprite(pokemon.id),
+    moves: pokemon.moves || [],
+    stats: pokemon.stats || {},
   };
 }
 

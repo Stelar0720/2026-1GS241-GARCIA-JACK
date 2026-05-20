@@ -8,6 +8,7 @@ export type MessageType =
   | 'ready'
   | 'ban_pokemon'
   | 'select_team'
+  | 'call_coin'
   | 'battle_action'
   | 'switch_pokemon'
   | 'ping'
@@ -20,6 +21,7 @@ export type MessageType =
   | 'phase_change'
   | 'pokemon_banned'
   | 'team_selected'
+  | 'coin_flip_result'
   | 'battle_update'
   | 'error'
   | 'pong'
@@ -190,6 +192,10 @@ export const wsActions = {
 
   selectTeam: (playerId: string, team: any[]) => {
     sendWSMessage('select_team', { playerId, team });
+  },
+
+  callCoin: (playerId: string, side: 'red' | 'charizard') => {
+    sendWSMessage('call_coin', { playerId, side });
   },
 
   battleAction: (playerId: string, action: string, data: any) => {

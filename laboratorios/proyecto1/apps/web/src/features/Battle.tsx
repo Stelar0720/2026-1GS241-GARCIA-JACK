@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Player } from '../App';
+import { BattleField } from './battle/BattleField';
+import { MoveSelector } from './battle/MoveSelector';
 
 interface BattleProps {
   player: Player;
+  opponent: Player | null;
   playerTeam: any[];
   opponentTeam: any[];
   currentTurn: string | null;
   battleUpdate: any | null;
+  coinFlip: any | null;
+  onCoinChoice?: (side: 'red' | 'charizard') => void;
   onBattleEnd: () => void;
   onAttack?: (action: string, data: any) => void;
   onSwitch?: (pokemonId: number) => void;
@@ -32,12 +37,30 @@ interface BattlePokemon {
   isFainted: boolean;
 }
 
+const coinModules = import.meta.glob('../../../../sprites/coin/*.{png,jpg,jpeg,PNG,JPG,JPEG}', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+const COIN_IMAGES = Object.entries(coinModules).reduce<Record<string, string>>((acc, [path, url]) => {
+  const name = path.toLowerCase();
+  if (name.includes('charizard')) acc.charizard = url;
+  if (name.includes('redcoin.png')) acc.red = url;
+  if (name.includes('pokeball defeated')) acc.pokeballDefeated = url;
+  if (name.includes('pokeball.png')) acc.pokeball = url;
+  return acc;
+}, {});
+
 export function Battle({
   player,
+  opponent,
   playerTeam,
   opponentTeam,
   currentTurn,
   battleUpdate,
+  coinFlip,
+  onCoinChoice,
   onBattleEnd,
   onAttack,
   onSwitch,
@@ -48,8 +71,12 @@ export function Battle({
   const [actionLog, setActionLog] = useState('');
   const [showMoveMenu, setShowMoveMenu] = useState(false);
   const [showSwitchMenu, setShowSwitchMenu] = useState(false);
+  const [systemMessage, setSystemMessage] = useState('');
   const [gameOver, setGameOver] = useState(false);
   const [winner, setWinner] = useState<string | null>(null);
+  const [showCoinFlip, setShowCoinFlip] = useState(true);
+  const [coinAnimating, setCoinAnimating] = useState(false);
+  const [coinFrame, setCoinFrame] = useState<'red' | 'charizard'>('red');
 
   const isMyTurn = currentTurn === player.id;
   const currentPlayerPokemon = playerPokemons.find(p => p.isActive) || null;
@@ -58,7 +85,29 @@ export function Battle({
   useEffect(() => {
     setPlayerPokemons(playerTeam.map((p, i) => normalizeBattlePokemon(p, i === 0)));
     setOpponentPokemons(opponentTeam.map((p, i) => normalizeBattlePokemon(p, i === 0)));
+    setShowCoinFlip(true);
   }, [playerTeam, opponentTeam]);
+
+  useEffect(() => {
+    if (!coinFlip || coinFlip.status !== 'result') return;
+    setCoinAnimating(true);
+    const frameTimer = window.setInterval(() => {
+      setCoinFrame(frame => frame === 'red' ? 'charizard' : 'red');
+    }, 120);
+    const animationTimer = window.setTimeout(() => setCoinAnimating(false), 1200);
+    const timer = window.setTimeout(() => setShowCoinFlip(false), 3600);
+    return () => {
+      window.clearInterval(frameTimer);
+      window.clearTimeout(animationTimer);
+      window.clearTimeout(timer);
+    };
+  }, [coinFlip?.status, coinFlip?.side]);
+
+  useEffect(() => {
+    if (!coinFlip || coinFlip.status !== 'choosing') return;
+    setShowCoinFlip(true);
+    setCoinAnimating(false);
+  }, [coinFlip?.status]);
 
   useEffect(() => {
     if (!battleUpdate || battleUpdate.playerId === player.id) return;
@@ -80,6 +129,20 @@ export function Battle({
     setBattleLog(prev => [...prev.slice(-4), message]);
     setActionLog(message);
     window.setTimeout(() => setActionLog(''), 1600);
+  };
+
+  const showTemporaryMessage = (message: string) => {
+    setSystemMessage(message);
+    window.setTimeout(() => setSystemMessage(''), 2600);
+  };
+
+  const chooseCoinSide = (side: 'red' | 'charizard') => {
+    setCoinAnimating(true);
+    const frameTimer = window.setInterval(() => {
+      setCoinFrame(frame => frame === 'red' ? 'charizard' : 'red');
+    }, 120);
+    window.setTimeout(() => window.clearInterval(frameTimer), 1400);
+    onCoinChoice?.(side);
   };
 
   const performAttack = (moveIndex: number) => {
@@ -181,8 +244,6 @@ export function Battle({
     return { damage, isCritical, effectiveness };
   };
 
-  const getHpPercent = (pokemon: BattlePokemon) => Math.max(0, (pokemon.currentHp / pokemon.maxHp) * 100);
-
   if (playerTeam.length === 0 || opponentTeam.length === 0) {
     return (
       <div class="screen battle">
@@ -194,203 +255,167 @@ export function Battle({
     );
   }
 
+  const overlay = coinFlip && showCoinFlip ? (
+    <CoinFlipOverlay
+      coinFlip={coinFlip}
+      player={player}
+      coinAnimating={coinAnimating}
+      coinFrame={coinFrame}
+      onChoose={chooseCoinSide}
+    />
+  ) : null;
+
+  const message = getBattleMessage({
+    player,
+    opponent,
+    coinFlip,
+    actionLog,
+    systemMessage,
+    battleLog,
+    gameOver,
+    winner,
+  });
+
+  const menuContent = showMoveMenu ? (
+    <MoveSelector moves={currentPlayerPokemon?.moves || []} onCancel={() => setShowMoveMenu(false)} onMove={performAttack} />
+  ) : showSwitchMenu ? (
+    <SwitchMenu pokemons={playerPokemons} onBack={() => setShowSwitchMenu(false)} onSwitch={switchPokemon} />
+  ) : null;
+
   return (
     <div class="screen battle">
-      <div class="battle-arena">
-        <div class="opponent-side">
-          {currentOpponentPokemon && (
-            <PokemonHp pokemon={currentOpponentPokemon} getHpPercent={getHpPercent} />
-          )}
-          <img
-            src={currentOpponentPokemon?.spriteFront}
-            alt="Opponent"
-            style={{ width: '80px', height: '80px', imageRendering: 'pixelated', marginTop: '8px' }}
-          />
-        </div>
-
-        <div style={{
-          position: 'absolute',
-          top: '10px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          padding: '8px 16px',
-          background: isMyTurn ? '#78c850' : '#6890f0',
-          borderRadius: '4px',
-          fontSize: '9px',
-          color: '#1a1a2e',
-          zIndex: 4,
-        }}>
-          {isMyTurn ? 'TU TURNO' : 'TURNO DEL OPONENTE'}
-        </div>
-
-        {actionLog && (
-          <div style={{
-            position: 'absolute',
-            top: '42%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            textAlign: 'center',
-            width: '70%',
-            pointerEvents: 'none',
-            zIndex: 3,
-          }}>
-            <div class="ds-textbox" style={{ fontSize: '9px', animation: 'fadeIn 0.2s', padding: '8px' }}>
-              {actionLog}
-            </div>
-          </div>
-        )}
-
-        <div class="player-side">
-          <img
-            src={currentPlayerPokemon?.spriteBack}
-            alt="Player"
-            style={{ width: '96px', height: '96px', imageRendering: 'pixelated', marginBottom: '8px' }}
-          />
-          {currentPlayerPokemon && (
-            <PokemonHp pokemon={currentPlayerPokemon} getHpPercent={getHpPercent} />
-          )}
-        </div>
-
-        <div style={{
-          position: 'absolute',
-          bottom: '0',
-          left: '0',
-          right: '0',
-          background: 'rgba(26, 26, 46, 0.9)',
-          padding: '8px',
-          maxHeight: '80px',
-          overflow: 'auto',
-        }}>
-          {battleLog.slice(-5).map((log, i) => (
-            <p key={i} style={{ fontSize: '8px', margin: '2px 0' }}>{log}</p>
-          ))}
-        </div>
-      </div>
-
-      <div class="ds-panel" style={{ marginTop: '16px' }}>
-        {!gameOver && isMyTurn && (
-          <>
-            {!showMoveMenu && !showSwitchMenu && (
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button class="ds-button gold" onClick={() => setShowMoveMenu(true)} style={{ flex: 1 }}>LUCHAR</button>
-                <button class="ds-button" onClick={() => setShowSwitchMenu(true)} style={{ flex: 1 }}>CAMBIAR</button>
-              </div>
-            )}
-
-            {showMoveMenu && (
-              <MoveMenu
-                pokemon={currentPlayerPokemon}
-                onBack={() => setShowMoveMenu(false)}
-                onAttack={performAttack}
-              />
-            )}
-
-            {showSwitchMenu && (
-              <SwitchMenu
-                pokemons={playerPokemons}
-                onBack={() => setShowSwitchMenu(false)}
-                onSwitch={switchPokemon}
-              />
-            )}
-          </>
-        )}
-
-        {!gameOver && !isMyTurn && (
-          <div style={{ textAlign: 'center', padding: '12px', color: '#a8a8c8', fontSize: '9px' }}>
-            Esperando decision del oponente...
-          </div>
-        )}
-
-        {gameOver && (
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '16px', color: winner === 'player' ? '#e0c030' : '#c03030', marginBottom: '16px' }}>
-              {winner === 'player' ? 'VICTORIA' : 'DERROTA'}
-            </p>
-            <button class="ds-button gold" onClick={onBattleEnd}>CONTINUAR</button>
-          </div>
-        )}
-      </div>
+      <BattleField
+        playerPokemon={currentPlayerPokemon}
+        enemyPokemon={currentOpponentPokemon}
+        playerTeam={playerPokemons}
+        enemyTeam={opponentPokemons}
+        pokeballUrl={COIN_IMAGES.pokeball}
+        pokeballDefeatedUrl={COIN_IMAGES.pokeballDefeated}
+        message={message}
+        isMyTurn={isMyTurn && !showCoinFlip && !gameOver}
+        backgroundId="grass-day"
+        overlay={overlay}
+        menuContent={menuContent}
+        onAttack={() => setShowMoveMenu(true)}
+        onSwitch={() => setShowSwitchMenu(true)}
+        onBag={() => showTemporaryMessage('Un verdadero campeón no necesita objetos.')}
+        onRun={() => showTemporaryMessage('¡COBARDE! No puedes huir de un combate de campeonato.')}
+      />
     </div>
   );
 }
 
-function PokemonHp({ pokemon, getHpPercent }: { pokemon: BattlePokemon; getHpPercent: (pokemon: BattlePokemon) => number }) {
-  const hpPercent = getHpPercent(pokemon);
+function CoinFlipOverlay({
+  coinFlip,
+  player,
+  coinAnimating,
+  coinFrame,
+  onChoose,
+}: {
+  coinFlip: any;
+  player: Player;
+  coinAnimating: boolean;
+  coinFrame: 'red' | 'charizard';
+  onChoose: (side: 'red' | 'charizard') => void;
+}) {
   return (
-    <div class="hp-container">
-      <div class="hp-text">
-        <span style={{ fontSize: '9px' }}>{pokemon.name}</span>
-        {pokemon.status !== 'none' && (
-          <span style={{ fontSize: '7px', marginLeft: '8px', padding: '2px 4px', borderRadius: '2px', background: '#f08030' }}>
-            {pokemon.status.toUpperCase()}
-          </span>
-        )}
-      </div>
-      <div style={{ fontSize: '8px', color: '#a8a8c8' }}>{pokemon.currentHp}/{pokemon.maxHp}</div>
-      <div class="hp-bar-outer">
-        <div
-          class={`hp-bar-inner ${hpPercent < 20 ? 'critical' : hpPercent < 50 ? 'warning' : ''}`}
-          style={{ width: `${hpPercent}%` }}
+    <div style={{
+      position: 'absolute',
+      inset: 0,
+      zIndex: 10,
+      background: 'rgba(10, 10, 30, 0.86)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      textAlign: 'center',
+      padding: '16px',
+    }}>
+      <div style={{ width: '130px', height: '130px', marginBottom: '14px', perspective: '700px' }}>
+        <img
+          src={COIN_IMAGES[coinAnimating ? coinFrame : (coinFlip.side || 'red')]}
+          alt={coinAnimating ? coinFrame : (coinFlip.side || 'coin')}
+          style={{
+            width: '130px',
+            height: '130px',
+            objectFit: 'contain',
+            animation: coinAnimating ? 'coinFlipSpin 0.32s linear infinite' : undefined,
+            filter: 'drop-shadow(0 10px 18px rgba(0,0,0,0.45))',
+          }}
         />
       </div>
+
+      {coinFlip.status === 'choosing' ? (
+        <div class="ds-textbox" style={{ fontSize: '10px', maxWidth: '300px' }}>
+          <p style={{ marginBottom: '10px', color: '#e0c030' }}>
+            {coinFlip.chooserPlayerId === player.id ? 'Elige cara o cruz' : 'El rival esta eligiendo cara o cruz...'}
+          </p>
+          {coinFlip.chooserPlayerId === player.id && (
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button class="ds-button gold" onClick={() => onChoose('red')}>CARA</button>
+              <button class="ds-button" onClick={() => onChoose('charizard')}>CRUZ</button>
+            </div>
+          )}
+          <p style={{ marginTop: '8px', fontSize: '8px', color: '#a8a8c8' }}>Cara = Red · Cruz = Charizard</p>
+        </div>
+      ) : (
+        <div class="ds-textbox" style={{ fontSize: '10px', maxWidth: '300px' }}>
+          <p style={{ marginBottom: '6px', color: '#e0c030' }}>
+            {coinFlip.side === 'red' ? 'CARA: RED' : 'CRUZ: CHARIZARD'}
+          </p>
+          <p>{coinFlip.startingPlayerId === player.id ? 'Tu empiezas el combate.' : 'El rival empieza el combate.'}</p>
+        </div>
+      )}
     </div>
   );
 }
 
-function MoveMenu({ pokemon, onBack, onAttack }: { pokemon: BattlePokemon | null; onBack: () => void; onAttack: (index: number) => void }) {
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h3 style={{ fontSize: '10px' }}>MOVIMIENTOS</h3>
-        <button class="ds-button" onClick={onBack} style={{ fontSize: '8px', padding: '6px 12px' }}>VOLVER</button>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-        {pokemon?.moves.map((move, i) => (
-          <button
-            key={i}
-            class="ds-button"
-            onClick={() => onAttack(i)}
-            disabled={move.pp <= 0}
-            style={{
-              textAlign: 'left',
-              padding: '8px',
-              borderLeft: `4px solid ${getTypeColor(move.type)}`,
-              background: move.pp <= 0 ? '#1a1a2e' : undefined,
-            }}
-          >
-            <div style={{ fontSize: '9px' }}>{move.name}</div>
-            <div style={{ fontSize: '7px', color: '#a8a8c8', marginTop: '4px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span style={{ background: getTypeColor(move.type), padding: '1px 4px', borderRadius: '2px', color: '#fff', textShadow: '1px 1px 1px #000' }}>
-                {move.type.toUpperCase()}
-              </span>
-              <span>PP: {move.pp}</span>
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+function getBattleMessage({
+  player,
+  opponent,
+  coinFlip,
+  actionLog,
+  systemMessage,
+  battleLog,
+  gameOver,
+  winner,
+}: {
+  player: Player;
+  opponent: Player | null;
+  coinFlip: any | null;
+  actionLog: string;
+  systemMessage: string;
+  battleLog: string[];
+  gameOver: boolean;
+  winner: string | null;
+}) {
+  if (gameOver) return winner === 'player' ? 'Victoria! Has ganado el combate por el titulo.' : 'Derrota... El combate ha terminado.';
+  if (systemMessage) return systemMessage;
+  if (actionLog) return actionLog;
+  if (coinFlip?.status === 'choosing') {
+    return `El campeon ${player.name} reta a ${opponent?.gender === 'female' ? 'la campeona' : 'el campeon'} ${opponent?.name || 'rival'} a una batalla Pokemon por el titulo.`;
+  }
+  if (battleLog.length > 0) return battleLog[battleLog.length - 1];
+  return 'Que comience la batalla Pokemon!';
 }
 
 function SwitchMenu({ pokemons, onBack, onSwitch }: { pokemons: BattlePokemon[]; onBack: () => void; onSwitch: (id: number) => void }) {
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h3 style={{ fontSize: '10px' }}>CAMBIAR POKEMON</h3>
-        <button class="ds-button" onClick={onBack} style={{ fontSize: '8px', padding: '6px 12px' }}>VOLVER</button>
+    <div class="battlefield-menu-content">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <h3 style={{ fontSize: '8px', color: '#202020' }}>CAMBIAR</h3>
+        <button class="battlefield-action-button" onClick={onBack} style={{ width: 'auto' }}>VOLVER</button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
         {pokemons.map((pokemon) => (
           <button
             key={pokemon.id}
-            class="ds-button"
+            class="battlefield-action-button"
             onClick={() => onSwitch(pokemon.id)}
             disabled={pokemon.isActive || pokemon.isFainted}
-            style={{ padding: '8px', opacity: pokemon.isFainted ? 0.45 : 1, borderColor: pokemon.isActive ? '#78c850' : undefined }}
           >
-            <img src={pokemon.spriteFront} alt={pokemon.name} style={{ width: '42px', height: '42px', imageRendering: 'pixelated' }} />
-            <div style={{ fontSize: '8px' }}>{pokemon.name}</div>
-            <div style={{ fontSize: '7px', color: '#a8a8c8' }}>{pokemon.currentHp}/{pokemon.maxHp} HP</div>
+            <img src={pokemon.spriteFront} alt={pokemon.name} style={{ width: '32px', height: '32px', imageRendering: 'pixelated' }} />
+            <div style={{ fontSize: '7px' }}>{pokemon.name}</div>
           </button>
         ))}
       </div>
@@ -452,15 +477,4 @@ function normalizeMoves(moves: any[] | undefined, types: string[] = []) {
     { id: 3, name: 'Swift', type: 'normal', power: 60, accuracy: 100, pp: 20, maxPp: 20 },
     { id: 4, name: 'Type Strike', type: types[0] || 'normal', power: 50, accuracy: 100, pp: 25, maxPp: 25 },
   ];
-}
-
-function getTypeColor(type: string): string {
-  const colors: Record<string, string> = {
-    normal: '#A8A878', fire: '#F08030', water: '#6890F0', electric: '#F8D030',
-    grass: '#78C850', ice: '#98D8D8', fighting: '#C03028', poison: '#A040A0',
-    ground: '#E0C068', flying: '#A890F0', psychic: '#F85888', bug: '#A8B820',
-    rock: '#B8A038', ghost: '#705898', dragon: '#7038F8', dark: '#705848',
-    steel: '#B8B8D0', fairy: '#EE99AC',
-  };
-  return colors[type] || colors.normal;
 }

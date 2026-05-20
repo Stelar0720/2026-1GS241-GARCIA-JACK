@@ -38,6 +38,7 @@ export interface GameStore {
   player2Bans: number;
   currentBattleTurn: string | null;
   lastBattleUpdate: any | null;
+  coinFlip: any | null;
 }
 
 export interface Room {
@@ -69,6 +70,7 @@ export function App() {
     player2Bans: 0,
     currentBattleTurn: null,
     lastBattleUpdate: null,
+    coinFlip: null,
   });
 
   const connectPlayer = (player: Player) => {
@@ -121,7 +123,7 @@ export function App() {
             player1Id: msg.payload.player1Id,
             player2Id: s.player?.id,
           },
-          opponent: { id: msg.payload.player1Id, name: 'Oponente', gender: 'other', spriteUrl: '' },
+          opponent: msg.payload.opponent || { id: msg.payload.player1Id, name: 'Oponente', gender: 'other', spriteUrl: '' },
           screen: 'lobby',
         }));
         break;
@@ -130,14 +132,24 @@ export function App() {
         setStore(s => ({
           ...s,
           room: s.room ? { ...s.room, player2Id: msg.payload.opponentId } : s.room,
-          opponent: { id: msg.payload.opponentId, name: 'Oponente', gender: 'other', spriteUrl: '' },
+          opponent: msg.payload.opponent || { id: msg.payload.opponentId, name: 'Oponente', gender: 'other', spriteUrl: '' },
         }));
         break;
 
       case 'opponent_left':
         setStore(s => ({
           ...s,
+          room: null,
           opponent: null,
+          screen: 'lobby',
+          isOpponentReady: false,
+          gamePhase: 'waiting',
+          playerTeam: [],
+          opponentTeam: [],
+          bannedPokemon: [],
+          currentBattleTurn: null,
+          lastBattleUpdate: null,
+          coinFlip: null,
         }));
         break;
 
@@ -199,6 +211,14 @@ export function App() {
 
       case 'battle_update':
         handleBattleUpdate(msg.payload);
+        break;
+
+      case 'coin_flip_result':
+        setStore(s => ({
+          ...s,
+          currentBattleTurn: msg.payload.currentTurn || null,
+          coinFlip: { ...msg.payload, status: 'result' },
+        }));
         break;
 
       case 'error':
@@ -268,6 +288,7 @@ export function App() {
             opponentTeam: opponentTeam?.length ? opponentTeam : s.opponentTeam,
             currentBattleTurn: payload.currentTurn || null,
             lastBattleUpdate: null,
+            coinFlip: payload.coinFlip || null,
           };
         });
         break;
@@ -374,10 +395,13 @@ export function App() {
         {store.screen === 'battle' && store.player && (
           <Battle
             player={store.player}
+            opponent={store.opponent}
             playerTeam={store.playerTeam}
             opponentTeam={store.opponentTeam}
             currentTurn={store.currentBattleTurn}
             battleUpdate={store.lastBattleUpdate}
+            coinFlip={store.coinFlip}
+            onCoinChoice={(side) => wsActions.callCoin(store.player!.id, side)}
             onBattleEnd={() => goToScreen('results')}
             onAttack={(action, data) => wsActions.battleAction(store.player!.id, action, data)}
             onSwitch={(pokemonId) => wsActions.switchPokemon(store.player!.id, pokemonId)}
@@ -390,19 +414,25 @@ export function App() {
             playerTeam={store.playerTeam}
             opponentTeam={store.opponentTeam}
             onPlayAgain={() => {
+              if (store.player && store.room) {
+                wsActions.leaveRoom(store.player.id);
+              }
               updateStore({ 
                 screen: 'lobby', 
+                room: null,
                 playerTeam: [], 
                 opponentTeam: [],
                 bannedPokemon: [],
                 opponent: null,
                 isOpponentReady: false,
+                gamePhase: 'waiting',
                 currentBanTurn: null,
                 timeRemaining: 60,
                 player1Bans: 0,
                 player2Bans: 0,
                 currentBattleTurn: null,
                 lastBattleUpdate: null,
+                coinFlip: null,
               });
             }}
           />

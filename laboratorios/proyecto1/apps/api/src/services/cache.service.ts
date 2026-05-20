@@ -99,9 +99,7 @@ class PokeAPICache {
       const data = await response.json() as { moves: { move: { url: string } }[] };
       const moves: Move[] = [];
 
-      // Limit moves for performance (4 moves per type for variety)
       const moveMap = new Map<string, Move>();
-      const maxMovesPerType = Math.ceil(CACHE_CONFIG.MAX_MOVES_PER_POKEMON / 10);
       
       for (const moveRef of data.moves) {
         if (moveMap.size >= CACHE_CONFIG.MAX_MOVES_PER_POKEMON) break;
@@ -266,7 +264,7 @@ interface TypeEffectiveness {
 
 export const CACHE_CONFIG = {
   MAX_POKEMON_IN_CACHE: 1025,
-  MAX_MOVES_PER_POKEMON: 50,
+  MAX_MOVES_PER_POKEMON: 12,
   CACHE_TTL_MS: 1000 * 60 * 60 * 24,
   RATE_LIMIT_DELAY: 100,
 };
