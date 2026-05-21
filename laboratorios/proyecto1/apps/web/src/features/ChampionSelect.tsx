@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { Player } from '../App';
 import { generatePlayerId, saveLocalStorage } from '../lib/api';
 
 interface ChampionSelectProps {
   player: Player | null;
+  suggestedName?: string;
   onComplete: (player: Player) => void;
 }
 
@@ -40,8 +41,8 @@ const TRAINER_SPRITES: TrainerSprite[] = Object.entries(spriteModules)
   })
   .filter(Boolean) as TrainerSprite[];
 
-export function ChampionSelect({ player, onComplete }: ChampionSelectProps) {
-  const [name, setName] = useState(player?.name || '');
+export function ChampionSelect({ player, suggestedName = '', onComplete }: ChampionSelectProps) {
+  const [name, setName] = useState(player?.name || suggestedName.slice(0, 12));
   const [gender, setGender] = useState<Gender>(player?.gender || 'male');
   const [selectedSpriteUrl, setSelectedSpriteUrl] = useState(player?.spriteUrl || '');
   const [step, setStep] = useState<'name' | 'gender' | 'sprite' | 'confirm'>('name');
@@ -53,6 +54,12 @@ export function ChampionSelect({ player, onComplete }: ChampionSelectProps) {
   }, [gender]);
 
   const selectedSprite = availableSprites.find(sprite => sprite.url === selectedSpriteUrl) || availableSprites[0] || null;
+
+  useEffect(() => {
+    if (!player?.name && suggestedName && !name.trim()) {
+      setName(suggestedName.slice(0, 12));
+    }
+  }, [player?.name, suggestedName, name]);
 
   const handleNameSubmit = () => {
     if (name.trim().length >= 2) {

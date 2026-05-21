@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# --- Friendly Windows bailout ------------------------------------------------
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  MINGW*|MSYS*|CYGWIN*)
+    _sh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || dirname "$0")"
+    cat >&2 <<EOF
+[FAIL] docx_preview.sh detected Windows host (git-bash / MSYS / Cygwin).
+       The .sh path uses unzip + heredoc patterns that misbehave on Windows shells.
+
+Use the PowerShell mirror instead (same pandoc -> tar.exe / Expand-Archive fallback chain):
+  powershell -ExecutionPolicy Bypass -File "${_sh_dir}\\docx_preview.ps1" <file.docx>
+EOF
+    exit 2
+    ;;
+esac
+
 usage() {
   echo "Usage: $(basename "$0") <file.docx>"
   echo "Preview DOCX content as plain text."

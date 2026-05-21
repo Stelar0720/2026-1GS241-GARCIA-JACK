@@ -71,7 +71,13 @@ After selecting a route, run the matching gate level before proceeding.
 | REPAIR_LAYOUT      | full       |
 
 ```bash
+# macOS / Linux / WSL
 bash <skill_dir>/scripts/env_check.sh --level <gate_level>
+```
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File <skill_dir>\scripts\env_check.ps1 -Level <Read|Render|Full>
 ```
 
 Do not run the full gate before route selection. The loader already ran the read gate; only

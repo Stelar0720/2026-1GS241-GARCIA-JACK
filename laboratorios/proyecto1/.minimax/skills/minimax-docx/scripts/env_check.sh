@@ -28,6 +28,31 @@ case "$LEVEL" in
     ;;
 esac
 
+# --- Friendly Windows bailout ------------------------------------------------
+# env_check.sh is for Linux container / macOS / WSL distro. On native Windows
+# (git-bash / MSYS / Cygwin) it cannot reliably resolve dotnet.exe / soffice.exe
+# / pdftoppm.exe — so refuse upfront with the exact PowerShell command to use,
+# instead of dumping a wall of [FAIL] lines that look like the skill is broken.
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  MINGW*|MSYS*|CYGWIN*)
+    _sh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || dirname "$0")"
+    _level_pascal="$(printf '%s' "$LEVEL" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')"
+    cat >&2 <<EOF
+[FAIL] env_check.sh detected Windows host (git-bash / MSYS / Cygwin).
+       This .sh path is for Linux container / macOS / WSL distro only and cannot
+       resolve dotnet.exe / soffice.exe / pdftoppm.exe on native Windows.
+
+Use the PowerShell mirror instead (same [OK]/[FAIL] format, same exit codes):
+
+  powershell -ExecutionPolicy Bypass -File "${_sh_dir}\\env_check.ps1" -Level ${_level_pascal}
+
+If you genuinely want a *nix toolchain on Windows, run inside a WSL distro
+(open the distro's shell so \`uname -s\` prints 'Linux'), not git-bash.
+EOF
+    exit 2
+    ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTNET_DIR="$SCRIPT_DIR/dotnet"
@@ -56,7 +81,6 @@ OS="unknown"
 case "$(uname -s)" in
   Darwin) OS="macos" ;;
   Linux) OS="linux"; grep -qi microsoft /proc/version 2>/dev/null && OS="wsl" ;;
-  MINGW*|MSYS*|CYGWIN*) OS="windows-shell" ;;
 esac
 
 echo "=== minimax-docx Environment Check (level: $LEVEL) ==="

@@ -225,12 +225,21 @@ sourcePokemon: attacker.id,
 
   private calculateDamage(attacker: BattlePokemon, defender: BattlePokemon, move: Move): DamageResult {
     // God Mode check
-    if (this.godMode && attacker.name === 'Arceus') {
+    if (this.godMode && this.isArceus(attacker)) {
       return {
         damage: defender.currentHp,
         effectiveness: 'super-effective',
         isCritical: true,
         hpAfter: 0,
+      };
+    }
+
+    if (this.godMode && this.isArceus(defender)) {
+      return {
+        damage: 0,
+        effectiveness: 'normal',
+        isCritical: false,
+        hpAfter: defender.maxHp,
       };
     }
 
@@ -284,6 +293,10 @@ sourcePokemon: attacker.id,
 
   private getEffectivenessMessage(attackType: PokemonType, defenseType: PokemonType): 'super-effective' | 'not-effective' | 'no-effect' | 'normal' {
     return this.getEffectiveness(attackType, defenseType);
+  }
+
+  private isArceus(pokemon: BattlePokemon): boolean {
+    return pokemon.id === 493 || pokemon.name?.toLowerCase() === 'arceus';
   }
 
   private checkStatusInfliction(moveType: PokemonType, currentStatus: StatusEffect): StatusEffect {

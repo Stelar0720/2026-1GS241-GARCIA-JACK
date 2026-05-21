@@ -1,7 +1,7 @@
 // Sinnoh Edition - Team Select Screen with Generation Filter, Search and Cache
 import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Player } from '../App';
-import { CONFIG, fetchPokemon, fetchPokemonMoves, getCachedPokemon, searchPokemon, setCachedPokemon, getPokemonSprite, getPokemonBackSprite } from '../lib/api';
+import { CONFIG, fetchPokemon, fetchPokemonMoves, getCachedPokemon, searchPokemon, setCachedPokemon, getPokemonSprite, getPokemonBackSprite, isGodModeActive, canUseShinyPokemon, canUseArceus, getPokemonSpriteWithGodMode } from '../lib/api';
 
 interface TeamSelectProps {
   player: Player;
@@ -28,9 +28,18 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
   const [timeLeft, setTimeLeft] = useState(CONFIG.GAME_CONFIG.TEAM_TIMEOUT);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [godModeActive, setGodModeActive] = useState(false);
+  const [shinyMode, setShinyMode] = useState(false);
   const selectedRef = useRef<number[]>([]);
   const selectedPokemonMapRef = useRef<Record<number, PokemonData>>({});
   const submittingRef = useRef(false);
+
+  // Check God Mode on mount
+  useEffect(() => {
+    const gm = isGodModeActive();
+    setGodModeActive(gm);
+    setShinyMode(gm && canUseShinyPokemon());
+  }, []);
 
   useEffect(() => {
     selectedRef.current = selected;
@@ -64,6 +73,7 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
       for (let i = 0; i < count; i++) {
         const id = gen.min + i;
         if (bannedPokemon.includes(id.toString())) continue;
+        if (id === 493 && !canUseArceus()) continue;
         ids.push(id);
       }
 
@@ -96,7 +106,7 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
       setLoading(false);
     };
     loadPokemons();
-  }, [selectedGen, bannedPokemon.length]);
+  }, [selectedGen, bannedPokemon.length, godModeActive]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +129,7 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
           ? await fetchPokemon(Number(query))
           : await searchPokemon(query);
         if (!rawPokemon || bannedPokemon.includes(String(rawPokemon.id)) || cancelled) return;
+        if (rawPokemon.id === 493 && !canUseArceus()) return;
 
         const pokemon = toPokemonData(rawPokemon);
         setCachedPokemon(pokemon.id, rawPokemon);
@@ -153,6 +164,8 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
   }, []);
 
   const togglePokemon = (id: number) => {
+    if (id === 493 && !canUseArceus()) return;
+
     if (selected.includes(id)) {
       setSelected(selected.filter(i => i !== id));
       setSelectedPokemonMap(prev => {
@@ -191,6 +204,14 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
     handleStartBattle(ids, mapped);
   };
 
+  // Get sprite based on God Mode
+  const getDisplaySprite = (pokemon: PokemonData): string => {
+    if (shinyMode && godModeActive) {
+      return getPokemonSpriteWithGodMode(pokemon.id, true);
+    }
+    return pokemon.spriteFront;
+  };
+
   const handleStartBattle = async (
     teamIds = selectedRef.current,
     pokemonMap = selectedPokemonMapRef.current
@@ -222,6 +243,7 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
         status: 'none',
         isActive: false,
         isFainted: false,
+        godModeArceus: godModeActive && pokemon.id === 493,
       };
     }))).filter(Boolean);
 
@@ -260,7 +282,7 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
                 {pokemon ? (
                   <>
                     <img 
-                      src={pokemon.spriteFront}
+                      src={getDisplaySprite(pokemon)}
                       alt={pokemon.name}
                       style={{ width: '48px', height: '48px', imageRendering: 'pixelated' }}
                       onError={(e) => {
@@ -331,14 +353,14 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
                   }}
                 >
                   <img 
-                    src={pokemon.spriteFront}
+                    src={getDisplaySprite(pokemon)}
                     alt={pokemon.name} 
                     class="pokemon-sprite"
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = getPokemonSprite(pokemon.id);
                     }}
                   />
-                  <p class="pokemon-name">{pokemon.name}</p>
+                  <p class="pokemon-name">{pokemon.name}{shinyMode && godModeActive ? ' ✨' : ''}</p>
                   <p style={{ fontSize: '7px', color: '#a8a8c8' }}>#{pokemon.id}</p>
                   <div class="pokemon-types">
                     {pokemon.types.map((type: string) => (
@@ -387,6 +409,34 @@ export function TeamSelect({ player: _player, bannedPokemon, onTeamComplete }: T
             {submitting ? 'PREPARANDO...' : `JUGAR (${selected.length})`}
           </button>
         </div>
+
+        {/* God Mode Toggle (if active) */}
+        {godModeActive && (
+          <div style={{
+            marginTop: '12px',
+            padding: '8px',
+            background: 'linear-gradient(180deg, #2a1a0a 0%, #1a1a2e 100%)',
+            border: '2px solid #e0c030',
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <p style={{ fontSize: '9px', color: '#e0c030', marginBottom: '8px' }}>✨ DIOS MODO ACTIVADO ✨</p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+              <button
+                class={`ds-button ${shinyMode ? 'gold' : ''}`}
+                onClick={() => setShinyMode(!shinyMode)}
+                style={{ fontSize: '8px' }}
+              >
+                {shinyMode ? 'SHINY ON' : 'SHINY OFF'}
+              </button>
+              {canUseArceus() && (
+                <span style={{ fontSize: '8px', color: '#a8a8c8', alignSelf: 'center' }}>
+                  🏆 Arceus desbloqueado
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

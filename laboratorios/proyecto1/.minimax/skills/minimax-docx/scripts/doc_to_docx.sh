@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# --- Friendly Windows bailout ------------------------------------------------
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  MINGW*|MSYS*|CYGWIN*)
+    _sh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || dirname "$0")"
+    cat >&2 <<EOF
+[FAIL] doc_to_docx.sh detected Windows host (git-bash / MSYS / Cygwin).
+       LibreOffice headless conversion on Windows is handled by the PowerShell mirror,
+       which knows how to find soffice.exe and isolate per-invocation user profiles.
+
+Use the PowerShell mirror instead:
+  powershell -ExecutionPolicy Bypass -File "${_sh_dir}\\doc_to_docx.ps1" <file.doc> [output_directory]
+EOF
+    exit 2
+    ;;
+esac
+
 usage() {
   echo "Usage: $(basename "$0") <file.doc> [output_directory]"
   echo "Convert .doc to .docx using LibreOffice."

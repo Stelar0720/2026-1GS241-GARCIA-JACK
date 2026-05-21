@@ -6,7 +6,9 @@ import { BanPhase } from './features/BanPhase';
 import { TeamSelect } from './features/TeamSelect';
 import { Battle } from './features/Battle';
 import { Results } from './features/Results';
-import { loadLocalStorage } from './lib/api';
+import { BattlePassSuccess } from './features/BattlePassSuccess';
+import { BattlePassCancel } from './features/BattlePassCancel';
+import { loadLocalStorage, saveLocalStorage, setActiveBattlePassUserId } from './lib/api';
 import { initWebSocket, wsActions } from './lib/websocket';
 import type { WSMessage } from './lib/websocket';
 
@@ -51,7 +53,17 @@ export interface Room {
   banPhaseStartTime?: number | null;
 }
 
-export function App() {
+interface AppProps {
+  authEnabled?: boolean;
+  authenticatedUser?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+}
+
+export function App({ authEnabled = false, authenticatedUser = null }: AppProps) {
+  const path = window.location.pathname;
   const [store, setStore] = useState<GameStore>({
     screen: 'champion-select',
     player: null,
@@ -95,6 +107,19 @@ export function App() {
       connectPlayer(savedPlayer);
     }
   }, []);
+
+  useEffect(() => {
+    setActiveBattlePassUserId(authenticatedUser?.id || null);
+
+    if (!authenticatedUser?.name) return;
+    setStore(s => {
+      if (!s.player || s.player.name === authenticatedUser.name) return s;
+
+      const player = { ...s.player, name: authenticatedUser.name.slice(0, 12) };
+      saveLocalStorage('player', player);
+      return { ...s, player };
+    });
+  }, [authenticatedUser?.id, authenticatedUser?.name]);
 
   // Handle WebSocket messages
   const handleWebSocketMessage = (msg: WSMessage) => {
@@ -343,9 +368,16 @@ export function App() {
       </header>
 
       <main class="main-content">
+        {path === '/battle-pass/success' && <BattlePassSuccess authUserId={authenticatedUser?.id || null} />}
+
+        {path === '/battle-pass/cancel' && <BattlePassCancel />}
+
+        {path !== '/battle-pass/success' && path !== '/battle-pass/cancel' && (
+          <>
         {store.screen === 'champion-select' && (
           <ChampionSelect 
             player={store.player}
+            suggestedName={authenticatedUser?.name || ''}
             onComplete={(player) => {
               updateStore({ player, screen: 'lobby' });
               connectPlayer(player);
@@ -363,6 +395,8 @@ export function App() {
             onJoinRoom={(code) => wsActions.joinRoom(store.player!.id, code)}
             onReady={() => wsActions.ready(store.player!.id)}
             isConnected={store.isConnected}
+            authEnabled={authEnabled}
+            authUserId={authenticatedUser?.id || null}
           />
         )}
 
@@ -436,6 +470,8 @@ export function App() {
               });
             }}
           />
+        )}
+          </>
         )}
       </main>
 

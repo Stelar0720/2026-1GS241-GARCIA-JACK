@@ -68,6 +68,14 @@ export const SCHEMA_SQL = `
     timestamp INTEGER,
     FOREIGN KEY (room_id) REFERENCES rooms(id)
   );
+
+  CREATE TABLE IF NOT EXISTS user_battle_passes (
+    clerk_user_id TEXT PRIMARY KEY,
+    email TEXT,
+    stripe_session_id TEXT,
+    purchased_at INTEGER DEFAULT (strftime('%s', 'now')),
+    god_mode_active INTEGER DEFAULT 1
+  );
 `;
 
 export const INDEX_SQL = `
@@ -78,6 +86,7 @@ export const INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_bans_player ON room_bans(player_id);
   CREATE INDEX IF NOT EXISTS idx_teams_room ON teams(room_id);
   CREATE INDEX IF NOT EXISTS idx_teams_player ON teams(player_id);
+  CREATE INDEX IF NOT EXISTS idx_battle_pass_user ON user_battle_passes(clerk_user_id);
 `;
 
 export interface PlayerRow {

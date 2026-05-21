@@ -163,6 +163,26 @@ detect_platform() {
     MINGW*|MSYS*|CYGWIN*)
       OS="windows-git-bash"
       PKG_MGR="none"
+      cat <<'EOF' >&2
+
+[FAIL] You are running setup.sh under git-bash / MSYS / Cygwin on Windows.
+       This script will NOT install anything here — it cannot reach winget/choco/scoop
+       reliably from a POSIX-emulation shell, and any installs would land in the
+       wrong PATH for the rest of the toolchain (dotnet build needs a Windows-native
+       UTF-8 console, soffice.exe needs to be discoverable to PowerShell, etc.).
+
+       Run the PowerShell setup instead, in an elevated or normal PowerShell window:
+
+         powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+         # or, if pwsh 7+ is installed
+         pwsh        -ExecutionPolicy Bypass -File scripts\setup.ps1
+
+       Then verify with:
+
+         powershell -ExecutionPolicy Bypass -File scripts\env_check.ps1 -Level Read
+
+EOF
+      exit 2
       ;;
   esac
 

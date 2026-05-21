@@ -76,6 +76,14 @@ db.exec(`
     created_at INTEGER DEFAULT (strftime('%s', 'now')),
     FOREIGN KEY (room_id) REFERENCES rooms(id)
   );
+
+  CREATE TABLE IF NOT EXISTS user_battle_passes (
+    clerk_user_id TEXT PRIMARY KEY,
+    email TEXT,
+    stripe_session_id TEXT,
+    purchased_at INTEGER DEFAULT (strftime('%s', 'now')),
+    god_mode_active INTEGER DEFAULT 1
+  );
 `);
 
 export interface PlayerRow {
@@ -239,6 +247,21 @@ export const teamOps = {
 
   findByRoomAndPlayer: db.prepare(`
     SELECT * FROM teams WHERE room_id = ? AND player_id = ?
+  `),
+};
+
+export const battlePassOps = {
+  upsert: db.prepare(`
+    INSERT INTO user_battle_passes (clerk_user_id, email, stripe_session_id, god_mode_active)
+    VALUES (?, ?, ?, 1)
+    ON CONFLICT(clerk_user_id) DO UPDATE SET
+      email = excluded.email,
+      stripe_session_id = excluded.stripe_session_id,
+      god_mode_active = 1
+  `),
+
+  findByUserId: db.prepare(`
+    SELECT * FROM user_battle_passes WHERE clerk_user_id = ?
   `),
 };
 

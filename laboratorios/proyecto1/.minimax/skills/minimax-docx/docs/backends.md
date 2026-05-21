@@ -9,8 +9,15 @@ preservation requirements, not from what feels strongest.
 Shared roots:
 
 ```bash
+# macOS / Linux / WSL
 DOCX_ROOT="<skill_dir>"
 CLI="dotnet run --project $DOCX_ROOT/scripts/dotnet/MiniMaxAIDocx.Cli --"
+```
+
+```powershell
+# Windows
+$env:DOCX_ROOT = "<skill_dir>"
+$CLI = "dotnet run --project $env:DOCX_ROOT\scripts\dotnet\MiniMaxAIDocx.Cli --"
 ```
 
 ## Backend D — builtin dotnet CLI
@@ -28,10 +35,20 @@ CLI="dotnet run --project $DOCX_ROOT/scripts/dotnet/MiniMaxAIDocx.Cli --"
 
 **Gate**:
 ```bash
+# macOS / Linux / WSL
 test -d "$DOCX_ROOT" || { echo "FATAL: minimax-docx skill root missing" >&2; exit 1; }
 bash "$DOCX_ROOT/scripts/env_check.sh" | grep -E "^\[OK\][[:space:]]+dotnet\b" || {
   echo "FATAL: dotnet SDK not available" >&2
   exit 1
+}
+```
+
+```powershell
+# Windows
+if (-not (Test-Path $env:DOCX_ROOT)) { Write-Error "FATAL: minimax-docx skill root missing"; exit 1 }
+$check = & powershell -ExecutionPolicy Bypass -File "$env:DOCX_ROOT\scripts\env_check.ps1" -Level Full
+if (-not ($check | Select-String -Pattern '^\[OK\]\s+dotnet\b')) {
+    Write-Error "FATAL: dotnet SDK not available"; exit 1
 }
 ```
 

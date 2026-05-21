@@ -41,6 +41,10 @@ export const currentScreen = computed(() => gameState.value.screen);
 // ============================================
 
 function getApiUrl(): string {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+
   // If deployed, use the deployed API URL, otherwise use localhost
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
     // For deployed versions, assume API is also deployed or use relative path
@@ -418,4 +422,173 @@ export function loadLocalStorage<T>(key: string, defaultValue: T): T {
 export function clearLocalStorage(): void {
   const keys = Object.keys(localStorage).filter(k => k.startsWith('sinnoh_'));
   keys.forEach(k => localStorage.removeItem(k));
+}
+
+// ============================================
+// BATTLE PASS / GOD MODE
+// ============================================
+
+export interface BattlePassState {
+  unlocked: boolean;
+  godModeActive: boolean;
+  purchasedAt: string | null;
+}
+
+const BATTLE_PASS_KEY = 'battle_pass';
+let activeBattlePassUserId: string | null = null;
+
+export function setActiveBattlePassUserId(userId: string | null): void {
+  activeBattlePassUserId = userId;
+}
+
+function getBattlePassKey(userId = activeBattlePassUserId): string | null {
+  return userId ? `${BATTLE_PASS_KEY}_${userId}` : null;
+}
+
+// Get Battle Pass state from localStorage
+export function getBattlePassState(userId = activeBattlePassUserId): BattlePassState {
+  const key = getBattlePassKey(userId);
+  if (!key) return { unlocked: false, godModeActive: false, purchasedAt: null };
+
+  const stored = loadLocalStorage<BattlePassState | null>(key, null);
+  return stored || { unlocked: false, godModeActive: false, purchasedAt: null };
+}
+
+// Unlock Battle Pass (called after successful payment)
+export function unlockBattlePass(userId = activeBattlePassUserId): boolean {
+  const key = getBattlePassKey(userId);
+  if (!key) return false;
+
+  localStorage.removeItem(`sinnoh_${BATTLE_PASS_KEY}`);
+  saveLocalStorage(key, {
+    unlocked: true,
+    godModeActive: true,
+    purchasedAt: new Date().toISOString(),
+  });
+  return true;
+}
+
+// Toggle God Mode
+export function toggleGodMode(userId = activeBattlePassUserId): boolean {
+  const key = getBattlePassKey(userId);
+  if (!key) return false;
+
+  const state = getBattlePassState(userId);
+  if (!state.unlocked) return false;
+  
+  const newState = { ...state, godModeActive: !state.godModeActive };
+  saveLocalStorage(key, newState);
+  return newState.godModeActive;
+}
+
+// Check if Battle Pass is unlocked
+export function hasBattlePass(userId = activeBattlePassUserId): boolean {
+  return getBattlePassState(userId).unlocked;
+}
+
+// Check if God Mode is active
+export function isGodModeActive(userId = activeBattlePassUserId): boolean {
+  return getBattlePassState(userId).godModeActive;
+}
+
+// Create Stripe Checkout Session for Battle Pass
+export interface BattlePassCheckoutRequest {
+  userId?: string;
+  email?: string;
+}
+
+export async function createBattlePassCheckout(
+  customer: BattlePassCheckoutRequest = {}
+): Promise<{ url: string } | { error: string }> {
+  try {
+    const res = await fetch(`${CONFIG.API_URL}/payments/create-battle-pass-checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(customer),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    
+    if (!res.ok) {
+      return { error: data.error || 'No se pudo crear la sesion de pago.' };
+    }
+    
+    if (!data.url) {
+      return { error: 'Stripe no devolvio una URL de pago.' };
+    }
+
+    return { url: data.url };
+  } catch (error) {
+    console.error('Error creating checkout:', error);
+    return { error: 'No se pudo conectar con el servidor de pagos.' };
+  }
+}
+
+export async function syncBattlePassState(userId = activeBattlePassUserId): Promise<BattlePassState> {
+  if (!userId) return { unlocked: false, godModeActive: false, purchasedAt: null };
+
+  try {
+    const res = await fetch(`${CONFIG.API_URL}/payments/battle-pass-status/${encodeURIComponent(userId)}`);
+    if (!res.ok) return getBattlePassState(userId);
+
+    const data = await res.json();
+    const state: BattlePassState = {
+      unlocked: Boolean(data.unlocked),
+      godModeActive: Boolean(data.godModeActive),
+      purchasedAt: data.purchasedAt || null,
+    };
+    const key = getBattlePassKey(userId);
+    if (key) saveLocalStorage(key, state);
+    return state;
+  } catch {
+    return getBattlePassState(userId);
+  }
+}
+
+// Verify Battle Pass purchase
+export async function verifyBattlePassPurchase(sessionId: string, userId = activeBattlePassUserId): Promise<boolean> {
+  if (!userId) return false;
+
+  try {
+    const res = await fetch(`${CONFIG.API_URL}/payments/verify-battle-pass/${sessionId}`);
+    const data = await res.json();
+    
+    if (data.success && data.battlePassUnlocked && (!data.clerkUserId || data.clerkUserId === userId)) {
+      unlockBattlePass(userId);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Error verifying purchase:', error);
+    return false;
+  }
+}
+
+// Get Pokemon sprite (normal or shiny based on God Mode)
+export function getPokemonSpriteWithGodMode(pokemonId: number, isShiny: boolean = false): string {
+  const base = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon';
+  
+  if (isShiny && isGodModeActive()) {
+    return `${base}/shiny/${pokemonId}.png`;
+  }
+  
+  return `${base}/${pokemonId}.png`;
+}
+
+// Check if shiny Pokemon is allowed
+export function canUseShinyPokemon(): boolean {
+  return isGodModeActive();
+}
+
+// Check if Arceus is allowed (canonical correct version)
+export function canUseArceus(): boolean {
+  return isGodModeActive();
+}
+
+// Special message for God Mode end of battle
+export function getGodModeEndMessage(): string {
+  if (isGodModeActive()) {
+    return "Aparentemente este campeón sí cobra sueldo XD";
+  }
+  return "";
 }

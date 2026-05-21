@@ -1,274 +1,560 @@
 # minimax-docx Environment Setup & Initialization Script (Windows PowerShell)
-# Supports: Windows 10/11, Windows Server 2019+
-# License: MIT
+# Mirror of setup.sh — Windows 10/11 + Windows Server 2019+
+# Requires: PowerShell 5.1+ (Windows-shipped) or PowerShell 7+ (pwsh)
+# Goals (parity with setup.sh):
+#   - dotnet >= 9
+#   - python (3.x), pandoc, LibreOffice (soffice.exe), poppler (pdftoppm.exe), zip/unzip
+#   - UTF-8 console (CRITICAL: dotnet build of the bundled project will fail on GBK consoles
+#     because some C# samples carry CJK content)
+#   - Same [OK] / [WARN] / [FAIL] / [INFO] / === === lines as setup.sh
+#   - Same exit codes (0 success / 1 fatal / 2 unsupported shell)
 #Requires -Version 5.1
 
+[CmdletBinding()]
 param(
+    [ValidateSet('Read', 'Render', 'Full')]
+    [string]$Level = 'Full',
     [switch]$Minimal,
     [switch]$SkipVerify,
     [switch]$Help
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectDir = Split-Path -Parent $ScriptDir
-$DotnetDir = Join-Path $ScriptDir "dotnet"
-$LogFile = Join-Path $ProjectDir ".setup.log"
+# Force UTF-8 for THIS session AND its child native processes (dotnet build / pandoc / soffice).
+# [Console]::OutputEncoding only affects PowerShell's view of stdout. The active console code page
+# (chcp) is what child native processes inherit, and CN/JP/KR Windows ships with chcp 936/932/949.
+# Bundled C# Sample files contain CJK string literals WITHOUT a UTF-8 BOM, so `dotnet build` will
+# fail on a non-UTF-8 console code page. chcp must come BEFORE the [Console]::OutputEncoding
+# assignment so we don't double-flip the encoding.
+try { & chcp.com 65001 *> $null } catch { } # chcp.com missing on Nano Server / WSL pwsh — fall through
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+$OutputEncoding           = [System.Text.UTF8Encoding]::new()
+# PS 5.1 default Invoke-WebRequest only enables Ssl3 + Tls1.0; dotnet-install endpoint requires
+# TLS 1.2+ since 2020. Enable Tls12/Tls13 globally for this session before any IWR call.
+try {
+    [Net.ServicePointManager]::SecurityProtocol =
+        [Net.ServicePointManager]::SecurityProtocol -bor `
+        [Net.SecurityProtocolType]::Tls12 -bor `
+        [Net.SecurityProtocolType]::Tls11
+    if ([enum]::GetNames([Net.SecurityProtocolType]) -contains 'Tls13') {
+        [Net.ServicePointManager]::SecurityProtocol =
+            [Net.ServicePointManager]::SecurityProtocol -bor `
+            [Net.SecurityProtocolType]::Tls13
+    }
+} catch { } # rare environments lack the enum; let IWR fail loudly later
+$env:DOTNET_CLI_UI_LANGUAGE = 'en'
 
-# --- Output Helpers ---
-function Log   { Write-Host "[OK]    $args" -ForegroundColor Green }
-function Warn  { Write-Host "[WARN]  $args" -ForegroundColor Yellow }
-function Fail  { Write-Host "[FAIL]  $args" -ForegroundColor Red }
-function Info  { Write-Host "[INFO]  $args" -ForegroundColor Cyan }
-function Step  { Write-Host "`n=== $args ===" -ForegroundColor Blue }
+$ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = Split-Path -Parent $ScriptDir
+$DotnetDir  = Join-Path $ScriptDir 'dotnet'
+$LogFile    = Join-Path $ProjectDir '.setup.log'
+$DotnetRequiredMajor = 9
+
+# --- Output helpers (parity with setup.sh log/warn/fail/info/step) ---
+function Write-Log   { param([Parameter(ValueFromRemainingArguments = $true)]$Msg) Write-Host ("[OK]    " + ($Msg -join ' ')) -ForegroundColor Green }
+function Write-Warn  { param([Parameter(ValueFromRemainingArguments = $true)]$Msg) Write-Host ("[WARN]  " + ($Msg -join ' ')) -ForegroundColor Yellow }
+function Write-Fail  { param([Parameter(ValueFromRemainingArguments = $true)]$Msg) Write-Host ("[FAIL]  " + ($Msg -join ' ')) -ForegroundColor Red }
+function Write-Info  { param([Parameter(ValueFromRemainingArguments = $true)]$Msg) Write-Host ("[INFO]  " + ($Msg -join ' ')) -ForegroundColor Cyan }
+function Write-Step  { param([Parameter(ValueFromRemainingArguments = $true)]$Msg) Write-Host ("`n=== " + ($Msg -join ' ') + " ===") -ForegroundColor Blue }
 
 if ($Help) {
-    Write-Host @"
-Usage: setup.ps1 [options]
-  -Minimal       Only install critical dependencies (skip pandoc, soffice, fonts)
-  -SkipVerify    Skip the verification test at the end
-  -Help          Show this help
-"@
+    @"
+Usage: setup.ps1 [-Level Read|Render|Full] [-Minimal] [-SkipVerify] [-Help]
+
+  -Level Read     Only install/verify the read gate (python, unzip/tar, UTF-8)
+  -Level Render   Above + soffice + pdftoppm
+  -Level Full     Above + dotnet >= $DotnetRequiredMajor + pandoc + zip + project build (default)
+  -Minimal        Skip optional checks (fonts only)
+  -SkipVerify     Skip the final create-document verification
+  -Help           Show this help
+"@ | Write-Host
     exit 0
 }
 
 Write-Host "============================================"
 Write-Host "  minimax-docx Setup & Initialization (Windows)"
 Write-Host "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "  Level: $Level"
 Write-Host "============================================"
 
-"" | Set-Content $LogFile
+"" | Set-Content -Path $LogFile -Encoding UTF8
 
-# --- Detect Package Manager ---
-$HasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
-$HasChoco  = $null -ne (Get-Command choco -ErrorAction SilentlyContinue)
-$HasScoop  = $null -ne (Get-Command scoop -ErrorAction SilentlyContinue)
+# --- Detect package manager ---
+function Test-Command($Name) { [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
+$HasWinget = Test-Command winget
+$HasChoco  = Test-Command choco
+$HasScoop  = Test-Command scoop
 
-if ($HasWinget)     { Info "Package manager: winget" }
-elseif ($HasChoco)  { Info "Package manager: chocolatey" }
-elseif ($HasScoop)  { Info "Package manager: scoop" }
-else                { Warn "No package manager found (winget/choco/scoop). Manual install may be needed." }
+if     ($HasWinget) { Write-Info "Package manager: winget" }
+elseif ($HasChoco)  { Write-Info "Package manager: chocolatey" }
+elseif ($HasScoop)  { Write-Info "Package manager: scoop" }
+else                { Write-Warn "No package manager found (winget/choco/scoop). Manual install may be needed." }
 
-# --- .NET SDK ---
-Step "Checking .NET SDK"
-
-$dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
-if ($dotnetCmd) {
-    $dotnetVer = & dotnet --version 2>$null
-    $majorVer = [int]($dotnetVer -split '\.')[0]
-    if ($majorVer -ge 8) {
-        Log "dotnet $dotnetVer already installed (>= 8.0 OK)"
-    } else {
-        Warn "dotnet $dotnetVer found but < 8.0, upgrading..."
-        $dotnetCmd = $null
+function Add-PathForSession([string]$Dir) {
+    if (-not $Dir -or -not (Test-Path $Dir)) { return }
+    if (-not (($env:Path -split [IO.Path]::PathSeparator) -contains $Dir)) {
+        $env:Path = $Dir + [IO.Path]::PathSeparator + $env:Path
     }
 }
 
-if (-not $dotnetCmd -or $majorVer -lt 8) {
-    Info "Installing .NET SDK..."
-    if ($HasWinget) {
-        winget install Microsoft.DotNet.SDK.8 --accept-source-agreements --accept-package-agreements 2>>$LogFile
-    } elseif ($HasChoco) {
-        choco install dotnet-sdk -y 2>>$LogFile
-    } elseif ($HasScoop) {
-        scoop install dotnet-sdk 2>>$LogFile
-    } else {
-        Fail "Cannot auto-install .NET SDK. Download from: https://dotnet.microsoft.com/download"
-        Fail "After installing, restart PowerShell and re-run this script."
-        exit 1
+# Pull whatever Machine/User PATH the registry currently holds, MERGE it with the existing
+# session PATH (so any session-only Add-PathForSession entries from earlier in this script are
+# preserved), and dedup. Naively re-assigning $env:Path = "$machine;$user" wipes session-only
+# entries that have not been written to the registry yet — that was the original bug.
+function Sync-PathFromMachineUser {
+    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user    = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $sep     = [IO.Path]::PathSeparator
+    $sessionExtras = @()
+    foreach ($entry in ($env:Path -split $sep)) {
+        if (-not $entry) { continue }
+        $inMachine = ($machine -and ($machine -split $sep) -contains $entry)
+        $inUser    = ($user    -and ($user    -split $sep) -contains $entry)
+        if (-not ($inMachine -or $inUser)) { $sessionExtras += $entry }
     }
+    $merged = @()
+    foreach ($entry in @($sessionExtras + ($machine -split $sep) + ($user -split $sep))) {
+        if (-not $entry) { continue }
+        if ($merged -notcontains $entry) { $merged += $entry }
+    }
+    $env:Path = ($merged -join $sep)
+}
 
-    # Refresh PATH
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+# Back-compat alias for any external doc that still mentions the old name; new code MUST use
+# Sync-PathFromMachineUser. The ordering bug was: callers did Add-PathForSession then Refresh,
+# and Refresh wiped the just-added entry. Sync-* preserves session-only entries.
+Set-Alias -Name Refresh-PathFromMachineUser -Value Sync-PathFromMachineUser
 
-    if (Get-Command dotnet -ErrorAction SilentlyContinue) {
-        Log "dotnet $(dotnet --version) installed"
-    } else {
-        Fail "dotnet installation failed. Restart PowerShell and retry, or install manually."
-        exit 1
+# Replacement for `Tee-Object -FilePath $LogFile -Append` whose default encoding in PS 5.1 is
+# ANSI/Default (mojibakes CJK in the install log). Add-Content -Encoding UTF8 is the only
+# reliable way on 5.1 to append UTF-8 without reopening/rewriting the file.
+function Append-LogUtf8 {
+    [CmdletBinding()]
+    param([Parameter(ValueFromPipeline = $true)] $InputObject)
+    process {
+        $line = if ($null -eq $InputObject) { '' } else { "$InputObject" }
+        Add-Content -LiteralPath $script:LogFile -Value $line -Encoding UTF8
+        # Re-emit so the original Tee-Object behavior (also write to console / downstream) holds.
+        $InputObject
     }
 }
 
-# --- Pandoc (Optional) ---
-if (-not $Minimal) {
-    Step "Checking pandoc (optional: content preview)"
-
-    if (Get-Command pandoc -ErrorAction SilentlyContinue) {
-        $pandocVer = (pandoc --version | Select-Object -First 1) -replace '.*?(\d+\.\d+(\.\d+)?)', '$1'
-        Log "pandoc $pandocVer already installed"
-    } else {
-        Info "Installing pandoc..."
-        if ($HasWinget)    { winget install JohnMacFarlane.Pandoc --accept-source-agreements 2>>$LogFile }
-        elseif ($HasChoco) { choco install pandoc -y 2>>$LogFile }
-        elseif ($HasScoop) { scoop install pandoc 2>>$LogFile }
-        else               { Warn "Install pandoc manually: https://pandoc.org/installing.html" }
-
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-
-        if (Get-Command pandoc -ErrorAction SilentlyContinue) {
-            Log "pandoc installed"
-        } else {
-            Warn "pandoc not found after install (optional, will degrade gracefully)"
-        }
-    }
-}
-
-# --- LibreOffice (Optional) ---
-if (-not $Minimal) {
-    Step "Checking LibreOffice/soffice (optional: .doc conversion)"
-
-    $sofficeFound = $false
-
-    # Check common Windows install paths
-    $sofficePaths = @(
-        "C:\Program Files\LibreOffice\program\soffice.exe",
-        "C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-        "${env:LOCALAPPDATA}\Programs\LibreOffice\program\soffice.exe"
+function Install-WithPkgMgr {
+    param(
+        [Parameter(Mandatory)] [string]$Tool,
+        [string]$WingetId,
+        [string]$ChocoId,
+        [string]$ScoopId,
+        [string]$ManualUrl
     )
+    Write-Info "Installing $Tool ..."
+    if     ($HasWinget -and $WingetId) {
+        & winget install --id $WingetId --silent --accept-source-agreements --accept-package-agreements 2>&1 | Append-LogUtf8
+    }
+    elseif ($HasChoco -and $ChocoId) {
+        & choco install $ChocoId -y --no-progress 2>&1 | Append-LogUtf8
+    }
+    elseif ($HasScoop -and $ScoopId) {
+        & scoop install $ScoopId 2>&1 | Append-LogUtf8
+    }
+    else {
+        Write-Fail "Cannot auto-install $Tool. Install it manually: $ManualUrl"
+        return $false
+    }
+    Refresh-PathFromMachineUser
+    return $true
+}
 
-    if (Get-Command soffice -ErrorAction SilentlyContinue) {
-        Log "soffice found in PATH"
-        $sofficeFound = $true
-    } else {
-        foreach ($p in $sofficePaths) {
-            if (Test-Path $p) {
-                Log "soffice found at: $p"
-                Info "Tip: Add to PATH: `$env:Path += ';$(Split-Path $p)'"
-                $sofficeFound = $true
-                break
-            }
+# --- Resolve soffice.exe across the usual install layouts ---
+function Resolve-SofficePath {
+    $cmd = Get-Command soffice.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $cmd = Get-Command soffice -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    $candidates = @(
+        (Join-Path $env:ProgramFiles 'LibreOffice\program\soffice.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'LibreOffice\program\soffice.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\LibreOffice\program\soffice.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\soffice.exe'),
+        (Join-Path $env:USERPROFILE  'scoop\apps\libreoffice\current\program\soffice.exe')
+    ) | Where-Object { $_ }
+
+    foreach ($p in $candidates) {
+        if (Test-Path $p) { return (Resolve-Path $p).Path }
+    }
+    return $null
+}
+
+# --- Resolve pdftoppm.exe (poppler) ---
+function Resolve-PdftoppmPath {
+    $cmd = Get-Command pdftoppm.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $cmd = Get-Command pdftoppm -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    $candidates = @(
+        (Join-Path $env:USERPROFILE 'scoop\apps\poppler\current\bin\pdftoppm.exe'),
+        (Join-Path $env:ProgramData 'chocolatey\bin\pdftoppm.exe')
+    ) | Where-Object { $_ }
+    foreach ($p in $candidates) { if (Test-Path $p) { return (Resolve-Path $p).Path } }
+    return $null
+}
+
+# --- Resolve python (Windows ships `py` launcher; we want `python` callable) ---
+function Resolve-PythonCommand {
+    foreach ($name in @('python', 'python3', 'py')) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if (-not $cmd) { continue }
+        if ($name -eq 'py') {
+            try {
+                & $cmd.Source -3 --version *> $null
+                if ($LASTEXITCODE -eq 0) { return @{ Cmd = $cmd.Source; Args = @('-3') } }
+            } catch { continue }
+        } else {
+            return @{ Cmd = $cmd.Source; Args = @() }
         }
     }
+    return $null
+}
 
-    if (-not $sofficeFound) {
-        Info "Installing LibreOffice (this may take a while)..."
-        if ($HasWinget)    { winget install TheDocumentFoundation.LibreOffice --accept-source-agreements 2>>$LogFile }
-        elseif ($HasChoco) { choco install libreoffice-fresh -y 2>>$LogFile }
-        else               { Warn "Install LibreOffice manually: https://www.libreoffice.org/download/" }
+# ============ READ-LEVEL DEPS ============
+function Install-Python {
+    Write-Step "Checking python (>= 3.9)"
+    $py = Resolve-PythonCommand
+    if ($py) {
+        $verLine = (& $py.Cmd @($py.Args + '--version') 2>&1) -join ' '
+        Write-Log "python available: $($py.Cmd) ($verLine)"
+        return $true
     }
+    if (-not (Install-WithPkgMgr -Tool 'python' `
+              -WingetId 'Python.Python.3.12' `
+              -ChocoId  'python' `
+              -ScoopId  'python' `
+              -ManualUrl 'https://www.python.org/downloads/windows/')) { return $false }
+    $py = Resolve-PythonCommand
+    if (-not $py) { Write-Fail 'python installation finished but the command is still not on PATH'; return $false }
+    Write-Log "python installed: $($py.Cmd)"
+    return $true
 }
 
-# --- NuGet Configuration ---
-Step "Checking NuGet configuration"
-
-$nugetSources = & dotnet nuget list source 2>$null
-if ($nugetSources -match "nuget.org") {
-    Log "nuget.org source is configured"
-} else {
-    Warn "nuget.org not in sources. Adding..."
-    & dotnet nuget add source "https://api.nuget.org/v3/index.json" --name "nuget.org" 2>>$LogFile
+function Install-UnzipFallback {
+    Write-Step "Checking unzip / tar.exe"
+    if (Test-Command tar) {
+        # tar.exe ships with Windows 10 1803+ and handles .zip natively.
+        Write-Log "tar.exe available (handles .zip on Windows 10+)"
+        return $true
+    }
+    if (Test-Command unzip) {
+        Write-Log "unzip available"
+        return $true
+    }
+    Write-Warn "Neither tar.exe nor unzip found. Falling back to PowerShell Expand-Archive at runtime."
+    Write-Info "(Expand-Archive ships with PowerShell 5+ so this is a soft warning, not a fatal.)"
+    return $true
 }
 
-# --- Encoding Check ---
-Step "Checking console encoding"
-
-$currentEncoding = [Console]::OutputEncoding.EncodingName
-if ($currentEncoding -match "UTF-8|Unicode") {
-    Log "Console encoding: $currentEncoding (UTF-8 compatible)"
-} else {
-    Warn "Console encoding: $currentEncoding (may cause issues with CJK text)"
-    Info "To fix: [Console]::OutputEncoding = [System.Text.Encoding]::UTF8"
-    Info "Or set system-wide: Settings > Time & Language > Language > Administrative > Change system locale > Beta: UTF-8"
-    # Apply for this session
+function Test-Utf8Console {
+    Write-Step "Checking console encoding"
+    $enc = [Console]::OutputEncoding.WebName
+    $cp  = (chcp.com 2>$null | Out-String).Trim()
+    if ($enc -match '^utf-?8$') {
+        Write-Log "Console encoding: $enc / $cp"
+        return $true
+    }
+    Write-Warn "Console encoding is $enc / $cp. Forcing UTF-8 for this session."
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    Log "Set UTF-8 encoding for this session"
+    Write-Info "To make this permanent: 'Settings -> Time & Language -> Language & region -> Administrative -> Change system locale -> Beta: UTF-8'"
+    return $true
 }
 
-# --- Font Check ---
-if (-not $Minimal) {
-    Step "Checking fonts"
-
-    $fonts = [System.Drawing.FontFamily]::Families 2>$null
-    if ($fonts) {
-        $fontNames = $fonts | ForEach-Object { $_.Name }
-        $hasCalibri = $fontNames -contains "Calibri"
-        $hasTimes = $fontNames -contains "Times New Roman"
-        $hasCJK = ($fontNames | Where-Object { $_ -match "SimSun|Microsoft YaHei|MS Mincho|Malgun Gothic" }).Count -gt 0
-
-        if ($hasCalibri)   { Log "Western fonts: Calibri found" }       else { Warn "Calibri not found (install Microsoft Office or fonts)" }
-        if ($hasTimes)     { Log "Western fonts: Times New Roman found" } else { Warn "Times New Roman not found" }
-        if ($hasCJK)       { Log "CJK fonts: available" }               else { Warn "CJK fonts not found (install language packs for Chinese/Japanese/Korean)" }
-    } else {
-        Info "Cannot enumerate fonts (System.Drawing not loaded). Skipping font check."
-    }
-}
-
-# --- Build Project ---
-Step "Building minimax-docx .NET project"
-
-if (-not (Test-Path $DotnetDir)) {
-    Fail "Dotnet project directory not found: $DotnetDir"
-    exit 1
-}
-
-Push-Location $DotnetDir
-
-Info "Restoring NuGet packages..."
-$restoreResult = & dotnet restore --verbosity quiet 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Fail "NuGet restore failed:"
-    $restoreResult | ForEach-Object { Fail "  $_" }
-    Fail "Common causes:"
-    Fail "  - No internet (NuGet needs to download packages)"
-    Fail "  - Corporate proxy/firewall blocking nuget.org"
-    Fail "  - Insufficient disk space"
-    Fail "Try: dotnet restore --verbosity detailed"
-    Pop-Location
-    exit 1
-}
-Log "NuGet packages restored"
-
-Info "Building project..."
-$buildResult = & dotnet build --verbosity quiet --no-restore 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Fail "Build failed:"
-    $buildResult | ForEach-Object { Fail "  $_" }
-    Pop-Location
-    exit 1
-}
-Log "Project built successfully"
-
-Pop-Location
-
-# --- Verification ---
-if (-not $SkipVerify) {
-    Step "Verification Test"
-
-    $testOutput = Join-Path $env:TEMP "minimax-docx-setup-test-$PID.docx"
-
-    Info "Creating a test document..."
-    Push-Location $DotnetDir
-    $testResult = & dotnet run --project MiniMaxAIDocx.Cli -- create --type report --output $testOutput --title "Setup Test" 2>&1
-    $testExitCode = $LASTEXITCODE
-    Pop-Location
-
-    if ($testExitCode -eq 0 -and (Test-Path $testOutput)) {
-        Log "Test document created: $testOutput"
-
-        if (Get-Command pandoc -ErrorAction SilentlyContinue) {
-            $preview = & pandoc -f docx -t plain $testOutput 2>$null | Select-Object -First 3
-            if ($preview) { Log "Preview working: `"$($preview -join ' ')`"" }
+function Set-ScriptUnblock {
+    Write-Step "Unblocking skill scripts (NTFS Mark-of-the-Web)"
+    Get-ChildItem -Path $ScriptDir -File -Include *.ps1, *.sh -Recurse -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            try { Unblock-File -Path $_.FullName -ErrorAction Stop } catch { }
         }
+    Write-Log "scripts unblocked (where applicable)"
+}
 
-        Remove-Item $testOutput -Force
-        Log "Test passed - minimax-docx is ready to use!"
-    } else {
-        Fail "Test document creation failed. Output:"
-        $testResult | ForEach-Object { Fail "  $_" }
+# ============ RENDER-LEVEL DEPS ============
+function Install-Soffice {
+    Write-Step "Checking LibreOffice/soffice.exe"
+    $sof = Resolve-SofficePath
+    if ($sof) {
+        Write-Log "soffice available: $sof"
+        Add-PathForSession (Split-Path -Parent $sof)
+        return $true
+    }
+    Write-Info "Installing LibreOffice (this may take a few minutes)..."
+    if (-not (Install-WithPkgMgr -Tool 'LibreOffice' `
+              -WingetId 'TheDocumentFoundation.LibreOffice' `
+              -ChocoId  'libreoffice-fresh' `
+              -ScoopId  'libreoffice' `
+              -ManualUrl 'https://www.libreoffice.org/download/')) { return $false }
+    $sof = Resolve-SofficePath
+    if (-not $sof) {
+        Write-Fail "LibreOffice install reported success but soffice.exe is still not discoverable. Add its 'program' directory to PATH and re-run."
+        return $false
+    }
+    Add-PathForSession (Split-Path -Parent $sof)
+    Write-Log "soffice installed: $sof"
+    return $true
+}
+
+function Install-Poppler {
+    Write-Step "Checking pdftoppm (poppler)"
+    $pp = Resolve-PdftoppmPath
+    if ($pp) { Write-Log "pdftoppm available: $pp"; return $true }
+    if (-not (Install-WithPkgMgr -Tool 'poppler' `
+              -WingetId 'oschwartz10612.Poppler' `
+              -ChocoId  'poppler' `
+              -ScoopId  'poppler' `
+              -ManualUrl 'https://github.com/oschwartz10612/poppler-windows/releases')) { return $false }
+    $pp = Resolve-PdftoppmPath
+    if (-not $pp) { Write-Fail "poppler install reported success but pdftoppm.exe is still not discoverable"; return $false }
+    Add-PathForSession (Split-Path -Parent $pp)
+    Write-Log "pdftoppm installed: $pp"
+    return $true
+}
+
+# ============ FULL-LEVEL DEPS ============
+function Install-DotnetSdk {
+    Write-Step "Checking .NET SDK (>= $DotnetRequiredMajor.0)"
+    if (Test-Command dotnet) {
+        $verRaw = (& dotnet --version) 2>$null
+        if ($verRaw) {
+            try {
+                $major = [int](($verRaw -split '\.')[0])
+                if ($major -ge $DotnetRequiredMajor) {
+                    Write-Log "dotnet $verRaw already installed (>= $DotnetRequiredMajor.0 OK)"
+                    return $true
+                }
+                Write-Warn "dotnet $verRaw found but < $DotnetRequiredMajor.0, upgrading..."
+            } catch { Write-Warn "Could not parse dotnet --version output ('$verRaw'), reinstalling" }
+        }
+    }
+    # Prefer the official Channel install via dotnet-install.ps1 (no admin, lands in $env:USERPROFILE\.dotnet)
+    Write-Info "Installing .NET SDK $DotnetRequiredMajor via dotnet-install.ps1 (user-scope, no sudo)..."
+    $installerPath = Join-Path $env:TEMP "dotnet-install.ps1"
+    try {
+        Invoke-WebRequest -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installerPath -UseBasicParsing
+    } catch {
+        Write-Warn "Could not download dotnet-install.ps1: $_"
+        if (-not (Install-WithPkgMgr -Tool '.NET SDK' `
+                  -WingetId "Microsoft.DotNet.SDK.$DotnetRequiredMajor" `
+                  -ChocoId  'dotnet-sdk' `
+                  -ScoopId  'dotnet-sdk' `
+                  -ManualUrl "https://dotnet.microsoft.com/download/dotnet/$DotnetRequiredMajor.0")) { return $false }
+    }
+    if (Test-Path $installerPath) {
+        $dotnetRoot = Join-Path $env:USERPROFILE '.dotnet'
+        & powershell -ExecutionPolicy Bypass -File $installerPath -Channel "$DotnetRequiredMajor.0" -InstallDir $dotnetRoot 2>&1 |
+            Append-LogUtf8 | Out-Null
+        # NOTE: do NOT Sync-PathFromMachineUser here. dotnet-install.ps1 (user-scope) installs to
+        # $USERPROFILE\.dotnet but does NOT modify the registry PATH; syncing would still preserve
+        # the session-only Add we're about to do, but no useful work would happen. Just Add and
+        # move on.
+        Add-PathForSession $dotnetRoot
+    }
+    if (-not (Test-Command dotnet)) {
+        Write-Fail "dotnet installation failed"
+        return $false
+    }
+    Write-Log "dotnet $(& dotnet --version) installed"
+    return $true
+}
+
+function Install-Pandoc {
+    Write-Step "Checking pandoc"
+    if (Test-Command pandoc) {
+        $pv = (& pandoc --version | Select-Object -First 1)
+        Write-Log "pandoc already installed ($pv)"
+        return $true
+    }
+    if (-not (Install-WithPkgMgr -Tool 'pandoc' `
+              -WingetId 'JohnMacFarlane.Pandoc' `
+              -ChocoId  'pandoc' `
+              -ScoopId  'pandoc' `
+              -ManualUrl 'https://pandoc.org/installing.html')) { return $false }
+    if (-not (Test-Command pandoc)) { Write-Fail 'pandoc installation failed'; return $false }
+    Write-Log "pandoc installed"
+    return $true
+}
+
+function Install-ZipTools {
+    Write-Step "Checking zip / Compress-Archive"
+    if (Test-Command zip) { Write-Log "zip available"; return $true }
+    # Compress-Archive is built into PowerShell 5+; treat as zip equivalent for skill needs.
+    if (Get-Command Compress-Archive -ErrorAction SilentlyContinue) {
+        Write-Log "Compress-Archive cmdlet available (zip equivalent)"
+        return $true
+    }
+    Write-Warn "Neither zip nor Compress-Archive available. DOCX repacking may fail."
+    return $true
+}
+
+function Test-NugetConfig {
+    Write-Step "Checking NuGet configuration"
+    try {
+        $sources = & dotnet nuget list source 2>$null
+        if ($sources -and ($sources -match 'nuget.org')) {
+            Write-Log 'nuget.org source is configured'
+            return
+        }
+        Write-Warn 'nuget.org not in sources. Adding...'
+        & dotnet nuget add source 'https://api.nuget.org/v3/index.json' --name 'nuget.org' 2>&1 |
+            Append-LogUtf8 | Out-Null
+    } catch {
+        Write-Warn "Could not validate NuGet sources: $_"
     }
 }
 
-# --- Summary ---
-Step "Setup Complete"
+function Build-DotnetProject {
+    Write-Step "Building minimax-docx .NET project"
+    if (-not (Test-Path $DotnetDir)) {
+        Write-Fail "Dotnet project directory not found: $DotnetDir"
+        return $false
+    }
+    Push-Location $DotnetDir
+    try {
+        Write-Info "Restoring NuGet packages..."
+        & dotnet restore --verbosity quiet 2>&1 | Append-LogUtf8 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "NuGet restore failed. Common causes: no internet / corporate proxy blocking nuget.org / disk full."
+            Write-Info "Diagnose with: dotnet restore --verbosity detailed"
+            return $false
+        }
+        Write-Log "NuGet packages restored"
 
-Write-Host ""
-Write-Host "  Environment: Windows $([System.Environment]::OSVersion.Version)"
-Write-Host "  .NET SDK:    $(dotnet --version 2>$null)"
-$pandocInfo = if (Get-Command pandoc -ErrorAction SilentlyContinue) { pandoc --version | Select-Object -First 1 } else { "not installed (optional)" }
-Write-Host "  pandoc:      $pandocInfo"
-Write-Host "  Project:     $DotnetDir"
-Write-Host ""
-Write-Host "  Usage:"
-Write-Host "    dotnet run --project $DotnetDir\MiniMaxAIDocx.Cli -- create --type report --output my_report.docx"
-Write-Host ""
-Write-Host "  Log file: $LogFile"
+        Write-Info "Building project..."
+        & dotnet build --verbosity quiet --no-restore 2>&1 | Append-LogUtf8 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "Build failed. Check $LogFile for details."
+            return $false
+        }
+        Write-Log "Project built successfully"
+        return $true
+    } finally {
+        Pop-Location
+    }
+}
+
+function Test-Verification {
+    Write-Step "Verification Test"
+    $testOutput = Join-Path $env:TEMP "minimax-docx-setup-test-$PID.docx"
+    Push-Location $DotnetDir
+    try {
+        Write-Info "Creating a test document..."
+        & dotnet run --project MiniMaxAIDocx.Cli -- create --type report --output $testOutput --title 'Setup Test' 2>&1 |
+            Append-LogUtf8 | Out-Null
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $testOutput)) {
+            Write-Fail "Test document creation failed. Check $LogFile for details."
+            return $false
+        }
+        Write-Log "Test document created: $testOutput"
+        Remove-Item $testOutput -Force -ErrorAction SilentlyContinue
+        Write-Log "Test passed - minimax-docx is ready to use"
+        return $true
+    } finally {
+        Pop-Location
+    }
+}
+
+function Test-Fonts {
+    Write-Step "Checking fonts"
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $names = [System.Drawing.FontFamily]::Families | ForEach-Object { $_.Name }
+    } catch {
+        Write-Info "Cannot enumerate fonts (System.Drawing unavailable). Skipping."
+        return
+    }
+    if ($names -contains 'Calibri')         { Write-Log 'Western fonts: Calibri' }         else { Write-Warn 'Calibri missing — install Microsoft Office or fonts pack' }
+    if ($names -contains 'Times New Roman') { Write-Log 'Western fonts: Times New Roman' } else { Write-Warn 'Times New Roman missing' }
+    if ($names | Where-Object { $_ -match 'SimSun|Microsoft YaHei|MS Mincho|Malgun Gothic|Noto Sans CJK' }) {
+        Write-Log 'CJK fonts: available'
+    } else {
+        Write-Warn 'CJK fonts not found — install Chinese/Japanese/Korean language packs'
+    }
+}
+
+function Show-Summary {
+    Write-Step "Setup Complete"
+    $sof = Resolve-SofficePath; if (-not $sof) { $sof = 'NOT FOUND' }
+    $pp  = Resolve-PdftoppmPath; if (-not $pp)  { $pp  = 'NOT FOUND' }
+    $py  = Resolve-PythonCommand
+    $pyDisp = if ($py) { "$($py.Cmd) $($py.Args -join ' ')" } else { 'NOT FOUND' }
+    $dotnetVer = try { (& dotnet --version 2>$null) } catch { $null }
+    if (-not $dotnetVer) { $dotnetVer = 'NOT FOUND' }
+    $pandocVer = try { (& pandoc --version 2>$null | Select-Object -First 1) } catch { $null }
+    if (-not $pandocVer) { $pandocVer = 'NOT FOUND' }
+
+    Write-Host ""
+    Write-Host ("  Environment: Windows {0}" -f [Environment]::OSVersion.Version)
+    Write-Host ("  Level:       {0}" -f $Level)
+    Write-Host ("  dotnet:      {0}" -f $dotnetVer)
+    Write-Host ("  python:      {0}" -f $pyDisp)
+    Write-Host ("  pandoc:      {0}" -f $pandocVer)
+    Write-Host ("  pdftoppm:    {0}" -f $pp)
+    Write-Host ("  soffice:     {0}" -f $sof)
+    Write-Host ("  Project:     {0}" -f $DotnetDir)
+    Write-Host ""
+    Write-Host ("  Mandatory preflight: powershell -ExecutionPolicy Bypass -File {0}\env_check.ps1 -Level Read" -f $ScriptDir)
+    Write-Host ("  Log file: {0}" -f $LogFile)
+
+    # --- Friendly PATH refresh tip ------------------------------------------------
+    # winget / choco / the .NET installer write to *Machine* PATH, which a *new*
+    # PowerShell window inherits but the *current* one (running this script) does
+    # not unless we explicitly re-pull from the registry. setup.ps1 already calls
+    # Sync-PathFromMachineUser internally after each tool install, so the rest of
+    # *this* session is fine — but a separate PowerShell window the user opens
+    # later (e.g. to run a skill manually) could still see a stale PATH if it was
+    # opened *before* setup.ps1 finished. Surface the exact one-liner here so they
+    # don't have to hunt for it.
+    $pathTip = '$env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")'
+    Write-Host ""
+    Write-Host "  Tip: if a *different* PowerShell window opened before this script finished"
+    Write-Host "       still says 'dotnet/pandoc/pdftoppm not recognized', that window has"
+    Write-Host "       a stale PATH. Two ways to fix it:"
+    Write-Host "         1. Open a brand new PowerShell window (cleanest)"
+    Write-Host "         2. Or paste this one-liner into the stale window:"
+    Write-Host "              $pathTip"
+}
+
+# ============ MAIN ============
+$fatal = $false
+
+# Read level (always)
+if (-not (Install-Python))         { $fatal = $true }
+Install-UnzipFallback | Out-Null
+Test-Utf8Console      | Out-Null
+Set-ScriptUnblock     | Out-Null
+
+# Render level
+if ($Level -in @('Render', 'Full')) {
+    if (-not (Install-Soffice))    { $fatal = $true }
+    if (-not (Install-Poppler))    { $fatal = $true }
+}
+
+# Full level
+if ($Level -eq 'Full') {
+    if (-not (Install-DotnetSdk))  { $fatal = $true }
+    if (-not (Install-Pandoc))     { $fatal = $true }
+    Install-ZipTools | Out-Null
+    Test-NugetConfig
+    if (-not $fatal) {
+        if (-not (Build-DotnetProject)) { $fatal = $true }
+    }
+}
+
+if (-not $Minimal -and $Level -eq 'Full') { Test-Fonts }
+
+if (-not $fatal -and -not $SkipVerify -and $Level -eq 'Full') {
+    if (-not (Test-Verification)) { $fatal = $true }
+}
+
+Show-Summary
+
+if ($fatal) { exit 1 } else { exit 0 }

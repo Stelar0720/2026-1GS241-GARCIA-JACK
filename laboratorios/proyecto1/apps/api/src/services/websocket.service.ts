@@ -101,6 +101,12 @@ function getPublicPlayer(playerId: string | null | undefined) {
   };
 }
 
+function randomCoinSide(): 'red' | 'charizard' {
+  const values = new Uint32Array(1);
+  crypto.getRandomValues(values);
+  return values[0] % 2 === 0 ? 'red' : 'charizard';
+}
+
 // Start ban phase timer
 function startBanTimer(roomId: string) {
   // Clear any existing timer
@@ -639,7 +645,7 @@ export function setupWebSocketServer(port: number = 3001) {
     }
 
     const calledSide = side === 'charizard' ? 'charizard' : 'red';
-    const resultSide = Math.random() < 0.5 ? 'red' : 'charizard';
+    const resultSide = randomCoinSide();
     const opponentId = room.player1_id === playerId ? room.player2_id : room.player1_id;
     const startingPlayerId = resultSide === calledSide ? playerId : opponentId;
     if (!startingPlayerId) return;

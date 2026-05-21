@@ -79,10 +79,30 @@ export function calculateDamage(
   const isCritical = Math.random() < criticalChance;
   const critMultiplier = isCritical ? 1.5 : 1;
 
-  // God Mode check for Arceus
-  const godModeMultiplier = (attacker.name?.toLowerCase() === 'arceus') 
-    ? Number.POSITIVE_INFINITY 
-    : 1;
+  const arceusAttack = attacker.name?.toLowerCase() === 'arceus' || attacker.id === 493;
+  const arceusDefense = defender.name?.toLowerCase() === 'arceus' || defender.id === 493;
+
+  if (arceusAttack) {
+    return {
+      damage: defender.currentHp,
+      effectiveness: 'super-effective',
+      isCritical: true,
+      hpAfter: 0,
+      stab: true,
+      missed: false,
+    };
+  }
+
+  if (arceusDefense) {
+    return {
+      damage: 0,
+      effectiveness: getEffectivenessLabel(typeMultiplier),
+      isCritical: false,
+      hpAfter: defender.maxHp,
+      stab,
+      missed: false,
+    };
+  }
 
   // Base damage formula (Gen IV style)
   const baseDamage = ((2 * level / 5 + 2) * power * attack / defense / 50 + 2);
@@ -93,8 +113,7 @@ export function calculateDamage(
     * typeMultiplier 
     * (stab ? 1.5 : 1) 
     * random 
-    * critMultiplier 
-    * godModeMultiplier
+    * critMultiplier
   );
 
   // Minimum damage is always at least 1 (unless no-effect)

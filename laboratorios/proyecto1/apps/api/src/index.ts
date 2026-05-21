@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import pokemonRoutes from './routes/pokemon.routes.js';
 import cacheRoutes from './routes/cache.routes.js';
+import paymentRoutes from './routes/payment.routes.js';
 import { setupWebSocketServer } from './services/websocket.service.js';
 
 const app = new Hono();
@@ -17,6 +18,7 @@ app.use('/*', cors({
 // Routes
 app.route('/api/pokemon', pokemonRoutes);
 app.route('/api/cache', cacheRoutes);
+app.route('/api/payments', paymentRoutes);
 
 // Health check
 app.get('/health', (c) => c.json({ 

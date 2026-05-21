@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Player } from '../App';
 import { BattleField } from './battle/BattleField';
 import { MoveSelector } from './battle/MoveSelector';
@@ -35,6 +35,7 @@ interface BattlePokemon {
   status: string;
   isActive: boolean;
   isFainted: boolean;
+  godModeArceus?: boolean;
 }
 
 const coinModules = import.meta.glob('../../../../sprites/coin/*.{png,jpg,jpeg,PNG,JPG,JPEG}', {
@@ -51,6 +52,10 @@ const COIN_IMAGES = Object.entries(coinModules).reduce<Record<string, string>>((
   if (name.includes('pokeball.png')) acc.pokeball = url;
   return acc;
 }, {});
+
+const ARCEUS_ID = 493;
+const GOD_MODE_HP = 999999;
+const ARCEUS_ENTRY_MESSAGE = 'Arceus has entered the battlefield. Reality is no longer stable.';
 
 export function Battle({
   player,
@@ -77,6 +82,7 @@ export function Battle({
   const [showCoinFlip, setShowCoinFlip] = useState(true);
   const [coinAnimating, setCoinAnimating] = useState(false);
   const [coinFrame, setCoinFrame] = useState<'red' | 'charizard'>('red');
+  const activeArceusKeyRef = useRef<string | null>(null);
 
   const isMyTurn = currentTurn === player.id;
   const currentPlayerPokemon = playerPokemons.find(p => p.isActive) || null;
@@ -86,6 +92,7 @@ export function Battle({
     setPlayerPokemons(playerTeam.map((p, i) => normalizeBattlePokemon(p, i === 0)));
     setOpponentPokemons(opponentTeam.map((p, i) => normalizeBattlePokemon(p, i === 0)));
     setShowCoinFlip(true);
+    activeArceusKeyRef.current = null;
   }, [playerTeam, opponentTeam]);
 
   useEffect(() => {
@@ -125,6 +132,18 @@ export function Battle({
     }
   }, [battleUpdate?.receivedAt]);
 
+  useEffect(() => {
+    const activeArceus = [
+      currentPlayerPokemon && isArceus(currentPlayerPokemon) ? `player:${currentPlayerPokemon.id}` : null,
+      currentOpponentPokemon && isArceus(currentOpponentPokemon) ? `opponent:${currentOpponentPokemon.id}` : null,
+    ].find(Boolean) || null;
+
+    if (activeArceus && activeArceus !== activeArceusKeyRef.current) {
+      addLog(ARCEUS_ENTRY_MESSAGE);
+    }
+    activeArceusKeyRef.current = activeArceus;
+  }, [currentPlayerPokemon?.id, currentOpponentPokemon?.id]);
+
   const addLog = (message: string) => {
     setBattleLog(prev => [...prev.slice(-4), message]);
     setActionLog(message);
@@ -152,7 +171,7 @@ export function Battle({
     if (!move || move.pp <= 0) return;
 
     const result = calculateDamage(currentPlayerPokemon, currentOpponentPokemon, move);
-    const targetHp = Math.max(0, currentOpponentPokemon.currentHp - result.damage);
+    const targetHp = getTargetHpAfterDamage(currentOpponentPokemon, result.damage);
     const isFainted = targetHp <= 0;
 
     addLog(`${currentPlayerPokemon.name} uso ${move.name}!`);
@@ -201,7 +220,9 @@ export function Battle({
     setPlayerPokemons(prev => {
       let updated = prev.map(p => {
         if (p.id !== defenderId) return p;
-        const targetHp = Math.max(0, Number(data.targetHp ?? p.currentHp - Number(data.damage || 0)));
+        const targetHp = isGodModeArceus(p)
+          ? p.maxHp
+          : Math.max(0, Number(data.targetHp ?? p.currentHp - Number(data.damage || 0)));
         return { ...p, currentHp: targetHp, isFainted: targetHp <= 0 || Boolean(data.isFainted) };
       });
       updated = activateNextIfNeeded(updated);
@@ -230,6 +251,10 @@ export function Battle({
   };
 
   const calculateDamage = (attacker: BattlePokemon, defender: BattlePokemon, move: any) => {
+    if (isGodModeArceus(attacker)) {
+      return { damage: defender.currentHp, isCritical: true, effectiveness: 'super-effective' };
+    }
+
     const level = 50;
     const power = move.power || 40;
     const attack = attacker.stats.attack || 60;
@@ -240,7 +265,8 @@ export function Battle({
     const stab = attacker.types.includes(move.type) ? 1.5 : 1;
     const effectiveness = ['super-effective', 'normal', 'not-effective'][Math.floor(Math.random() * 3)];
     const typeMultiplier = effectiveness === 'super-effective' ? 2 : effectiveness === 'not-effective' ? 0.5 : 1;
-    const damage = Math.max(1, Math.floor(baseDamage * stab * typeMultiplier * random * (isCritical ? 1.5 : 1)));
+    const calculatedDamage = Math.max(1, Math.floor(baseDamage * stab * typeMultiplier * random * (isCritical ? 1.5 : 1)));
+    const damage = isGodModeArceus(defender) ? 0 : calculatedDamage;
     return { damage, isCritical, effectiveness };
   };
 
@@ -322,7 +348,7 @@ function CoinFlipOverlay({
     <div style={{
       position: 'absolute',
       inset: 0,
-      zIndex: 10,
+      zIndex: 60,
       background: 'rgba(10, 10, 30, 0.86)',
       display: 'flex',
       flexDirection: 'column',
@@ -425,8 +451,9 @@ function SwitchMenu({ pokemons, onBack, onSwitch }: { pokemons: BattlePokemon[];
 
 function normalizeBattlePokemon(pokemon: any, isActive: boolean): BattlePokemon {
   const stats = pokemon.stats || {};
-  const maxHp = Number(pokemon.maxHp || pokemon.currentHp || stats.hp || 100);
   const id = Number(pokemon.id);
+  const godArceus = Boolean(pokemon.godModeArceus) && isArceus({ id, name: pokemon.name });
+  const maxHp = godArceus ? GOD_MODE_HP : Number(pokemon.maxHp || pokemon.currentHp || stats.hp || 100);
 
   return {
     id,
@@ -434,19 +461,33 @@ function normalizeBattlePokemon(pokemon: any, isActive: boolean): BattlePokemon 
     types: pokemon.types?.length ? pokemon.types : ['normal'],
     spriteFront: pokemon.spriteFront || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`,
     spriteBack: pokemon.spriteBack || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/back/${id}.png`,
-    currentHp: Number(pokemon.currentHp || maxHp),
+    currentHp: godArceus ? GOD_MODE_HP : Number(pokemon.currentHp || maxHp),
     maxHp,
     moves: normalizeMoves(pokemon.moves, pokemon.types),
     stats: {
-      hp: Number(stats.hp || maxHp),
-      attack: Number(stats.attack || 60),
-      defense: Number(stats.defense || 50),
+      hp: godArceus ? GOD_MODE_HP : Number(stats.hp || maxHp),
+      attack: godArceus ? GOD_MODE_HP : Number(stats.attack || 60),
+      defense: godArceus ? GOD_MODE_HP : Number(stats.defense || 50),
       speed: Number(stats.speed || 50),
     },
     status: pokemon.status || 'none',
     isActive,
-    isFainted: Boolean(pokemon.isFainted) || Number(pokemon.currentHp || maxHp) <= 0,
+    isFainted: godArceus ? false : Boolean(pokemon.isFainted) || Number(pokemon.currentHp || maxHp) <= 0,
+    godModeArceus: godArceus,
   };
+}
+
+function isArceus(pokemon: Pick<BattlePokemon, 'id' | 'name'> | { id: number; name?: string }) {
+  return Number(pokemon.id) === ARCEUS_ID || pokemon.name?.toLowerCase() === 'arceus';
+}
+
+function isGodModeArceus(pokemon: Pick<BattlePokemon, 'id' | 'name'>) {
+  return Boolean((pokemon as BattlePokemon).godModeArceus) && isArceus(pokemon);
+}
+
+function getTargetHpAfterDamage(defender: BattlePokemon, damage: number) {
+  if (isGodModeArceus(defender)) return defender.maxHp;
+  return Math.max(0, defender.currentHp - damage);
 }
 
 function activateNextIfNeeded(team: BattlePokemon[]) {

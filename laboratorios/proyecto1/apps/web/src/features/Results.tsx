@@ -1,5 +1,6 @@
 // Sinnoh Edition - Results Screen
 import type { Player } from '../App';
+import { isGodModeActive, getGodModeEndMessage } from '../lib/api';
 
 interface ResultsProps {
   player: Player | null;
@@ -9,6 +10,10 @@ interface ResultsProps {
 }
 
 export function Results({ player, playerTeam, opponentTeam, onPlayAgain }: ResultsProps) {
+  // Check God Mode status
+  const godModeActive = isGodModeActive();
+  const godMessage = godModeActive ? getGodModeEndMessage() : '';
+
   // Determine winner based on team survival
   const playerFainted = playerTeam.filter(p => p.isFainted).length;
   const opponentFainted = opponentTeam.filter(p => p.isFainted).length;
@@ -17,6 +22,22 @@ export function Results({ player, playerTeam, opponentTeam, onPlayAgain }: Resul
   return (
     <div class="screen results">
       <div class="ds-panel" style={{ textAlign: 'center' }}>
+        {/* God Mode Banner */}
+        {godModeActive && (
+          <div style={{
+            background: 'linear-gradient(180deg, #2a1a0a 0%, #1a1a2e 100%)',
+            border: '2px solid #e0c030',
+            borderRadius: '8px',
+            padding: '12px',
+            marginBottom: '16px'
+          }}>
+            <p style={{ fontSize: '10px', color: '#e0c030' }}>✨ DIOS MODO ACTIVADO ✨</p>
+            <p style={{ fontSize: '8px', color: '#a8a8c8', marginTop: '4px' }}>
+              {godMessage || 'Aparentemente este campeón sí cobra sueldo XD'}
+            </p>
+          </div>
+        )}
+
         {/* Result Title */}
         <div style={{ 
           background: playerWon ? 'linear-gradient(180deg, #e0c030 0%, #b0a020 100%)' : 'linear-gradient(180deg, #4a4a8a 0%, #3a3a6a 100%)',
@@ -99,6 +120,19 @@ export function Results({ player, playerTeam, opponentTeam, onPlayAgain }: Resul
             marginBottom: '20px'
           }}>
             <p style={{ fontSize: '12px' }}>🏆 {getTrophyMessage()}</p>
+          </div>
+        )}
+
+        {/* God Mode Special Victory Message */}
+        {godModeActive && playerWon && (
+          <div class="ds-textbox" style={{
+            background: 'linear-gradient(180deg, #3a2a1a 0%, #2a1a0a 100%)',
+            borderColor: '#e0c030',
+            marginBottom: '20px'
+          }}>
+            <p style={{ fontSize: '10px', color: '#e0c030' }}>
+              🎴 Con la tarjeta de crédito activa, esta victoria cuenta doble.
+            </p>
           </div>
         )}
 
