@@ -1,0 +1,172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tipografía estilo PEAK antigua */
+.peak-text {
+  font-family: 'VT323', 'Courier New', monospace;
+  letter-spacing: 0.05em;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.peak-title {
+  font-family: 'Courier New', monospace;
+  font-size: 1.5rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+/* Fondo estilo pergamino viejo */
+.peak-paper {
+  background: linear-gradient(
+    135deg,
+    #f5f5dc 0%,
+    #efe9d5 25%,
+    #f5f5dc 50%,
+    #efe9d5 75%,
+    #f5f5dc 100%
+  );
+  position: relative;
+}
+
+.peak-paper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 30px,
+      rgba(139, 115, 85, 0.05) 30px,
+      rgba(139, 115, 85, 0.05) 31px
+    );
+  pointer-events: none;
+}
+
+.peak-paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 0%,
+    rgba(139, 115, 85, 0.1) 100%
+  );
+  pointer-events: none;
+}
+
+/* Borde estilo antiguo */
+.peak-border {
+  border: 3px solid #8b7355;
+  box-shadow: 
+    inset 0 0 20px rgba(139, 115, 85, 0.2),
+    4px 4px 0 rgba(0, 0, 0, 0.15);
+  position: relative;
+}
+
+/* Botón estilo antiguo */
+.peak-button {
+  font-family: 'Courier New', monospace;
+  font-size: 1.1rem;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(180deg, #d4c4a8 0%, #c4b498 100%);
+  border: 2px solid #8b7355;
+  border-radius: 4px;
+  box样式: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    2px 2px 0 rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: all 0.1s ease;
+  font-weight: bold;
+}
+
+.peak-button:hover {
+  background: linear-gradient(180deg, #e4d4b8 0%, #d4c4a8 100%);
+  transform: translateY(-1px);
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    3px 3px 0 rgba(0, 0, 0, 0.2);
+}
+
+.peak-button:active {
+  transform: translateY(1px);
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    1px 1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* Inputs estilo antiguo */
+.peak-input {
+  font-family: 'Courier New', monospace;
+  font-size: 1.2rem;
+  padding: 0.5rem 1rem;
+  background: #fffef5;
+  border: 2px solid #8b7355;
+  border-radius: 4px;
+  box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.peak-input:focus {
+  outline: none;
+  border-color: #5c4a32;
+  box-shadow: 
+    inset 2px 2px 4px rgba(0, 0, 0, 0.1),
+    0 0 0 3px rgba(139, 115, 85, 0.2);
+}
+
+/* Animación de entrada */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.peak-enter {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Tablero de juego */
+.game-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  aspect-ratio: 1;
+  max-width: 560px;
+  width: 100%;
+  border: 4px solid #2c1810;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 2px #5c4a32;
+  margin: 0 auto;
+}
+
+.cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.cell-dark {
+  background: linear-gradient(135deg, #8b4513 0%, #654321 100%);
+}
+
+.cell-light {
+  background: linear-gradient(135deg, #deb887 0%, #d2b48c 100%);
+}
+
+.cell:hover {
+  filter: brightness(1.1);
+}
+
+.cell.selected {
+  box-shadow: inset 0 0 0 3px #ffd700;
+}
+
+.cell.valid-move {
+  box-shadow: inset 0 0 0 3px rgba(255, 215, 0, 0.5);
+}

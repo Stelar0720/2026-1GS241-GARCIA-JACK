@@ -1,0 +1,24 @@
+{
+  "name": "@checkers/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "echo 'No build needed for bun'"
+  },
+  "dependencies": {
+    "@checkers/shared": "workspace:*",
+    "@hono/node-server": "^2.0.4",
+    "cors": "^2.8.5",
+    "hono": "^4.2.0",
+    "sql.js": "^1.10.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/uuid": "^9.0.7",
+    "typescript": "^5.4.0"
+  }
+}

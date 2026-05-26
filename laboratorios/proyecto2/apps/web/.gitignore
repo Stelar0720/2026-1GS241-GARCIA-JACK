@@ -1,0 +1,17 @@
+node_modules
+.bun
+.env
+.env.local
+*.log
+.DS_Store
+
+# Build outputs
+dist
+.build
+.cache
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

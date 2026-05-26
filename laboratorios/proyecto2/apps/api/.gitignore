@@ -1,0 +1,29 @@
+node_modules
+.bun
+.env
+.env.local
+*.log
+.DS_Store
+
+# Build outputs
+dist
+.build
+.cache
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Docker volumes (don't include in repo)
+docker/volumes/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+~$*

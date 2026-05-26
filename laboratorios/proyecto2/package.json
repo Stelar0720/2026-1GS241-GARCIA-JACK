@@ -1,0 +1,22 @@
+{
+  "name": "checkers-project",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "echo 'Usa dos terminales: bun run dev:api y bun run dev:web'",
+    "dev:api": "cd apps/api && bun run dev",
+    "dev:web": "cd apps/web && bun run dev",
+    "start:api": "cd apps/api && bun run start",
+    "start:web": "cd apps/web && bun run start",
+    "docker:up": "docker compose -f docker/docker-compose.yml up --build -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

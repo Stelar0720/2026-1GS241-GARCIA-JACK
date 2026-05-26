@@ -1,0 +1,15 @@
+{
+  "name": "@checkers/web",
+  "extends": "../.base-tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "~/*": ["./src/*"]
+    },
+    "strict": true,
+    "jsx": "react-jsx",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"]
+  },
+  "include": ["src/**/*", "*.tsx", "*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
