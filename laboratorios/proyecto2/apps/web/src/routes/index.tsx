@@ -41,6 +41,12 @@ function Home() {
             </button>
           </Link>
 
+          <Link to="/shop" className="block">
+            <button className="peak-button w-full text-xl py-4">
+              Tienda de Skins
+            </button>
+          </Link>
+
           <Link to="/tutorial" className="block">
             <button className="peak-button w-full text-xl py-4">
               Como Jugar

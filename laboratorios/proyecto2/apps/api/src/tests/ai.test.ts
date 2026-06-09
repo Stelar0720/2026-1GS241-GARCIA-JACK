@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateBestMove, evaluateBoard, AI_CONFIGS } from '../services/ai.service';
+import { aStarSearch, calculateBestMove, evaluateBoard, AI_CONFIGS } from '../services/ai.service';
 import { createInitialBoard } from '../services/game.service';
 
 describe('AI Service', () => {
@@ -18,10 +18,19 @@ describe('AI Service', () => {
     expect(AI_CONFIGS.hard.maxDepth).toBe(6);
   });
 
-  it('should use alpha-beta only for medium and hard', () => {
+  it('should use A* instead of alpha-beta', () => {
     expect(AI_CONFIGS.easy.useAlphaBeta).toBe(false);
-    expect(AI_CONFIGS.medium.useAlphaBeta).toBe(true);
-    expect(AI_CONFIGS.hard.useAlphaBeta).toBe(true);
+    expect(AI_CONFIGS.medium.useAlphaBeta).toBe(false);
+    expect(AI_CONFIGS.hard.useAlphaBeta).toBe(false);
+  });
+
+  it('should expose A* search metadata', () => {
+    const board = createInitialBoard();
+    const result = aStarSearch(board, 'medium');
+
+    expect(result.move).not.toBeNull();
+    expect(result.exploredNodes).toBeGreaterThan(0);
+    expect(typeof result.score).toBe('number');
   });
 
   it('should evaluate board score', () => {

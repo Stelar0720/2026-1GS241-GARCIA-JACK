@@ -1,6 +1,7 @@
 // Tipos para el cliente
 export type { 
   Player, 
+  CheckersVariant,
   GameStatus, 
   Difficulty, 
   GameMode, 

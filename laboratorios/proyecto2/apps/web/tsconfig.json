@@ -1,7 +1,8 @@
 {
   "name": "@checkers/web",
-  "extends": "../.base-tsconfig.json",
+  "extends": "../../.base-tsconfig.json",
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "~/*": ["./src/*"]

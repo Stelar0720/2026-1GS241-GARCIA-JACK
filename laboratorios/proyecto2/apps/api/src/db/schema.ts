@@ -19,6 +19,8 @@ export const rankings = {
     { name: 'moves', type: 'INTEGER', notNull: true },
     { name: 'difficulty', type: 'TEXT', notNull: true },
     { name: 'game_mode', type: 'TEXT', notNull: true },
+    { name: 'result', type: 'TEXT' },
+    { name: 'checkers_variant', type: 'TEXT' },
     { name: 'created_at', type: 'INTEGER', notNull: true },
     { name: 'device_hash', type: 'TEXT' },
     { name: 'clerk_id', type: 'TEXT' }
@@ -36,6 +38,7 @@ export const gameSessions = {
     { name: 'status', type: 'TEXT', notNull: true },
     { name: 'difficulty', type: 'TEXT' },
     { name: 'game_mode', type: 'TEXT', notNull: true },
+    { name: 'checkers_variant', type: 'TEXT' },
     { name: 'winner', type: 'TEXT' },
     { name: 'created_at', type: 'INTEGER', notNull: true }
   ]
@@ -64,6 +67,8 @@ function createTables() {
       moves INTEGER NOT NULL,
       difficulty TEXT NOT NULL,
       game_mode TEXT NOT NULL,
+      result TEXT,
+      checkers_variant TEXT,
       created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
       device_hash TEXT,
       clerk_id TEXT
@@ -79,6 +84,7 @@ function createTables() {
       status TEXT NOT NULL,
       difficulty TEXT,
       game_mode TEXT NOT NULL,
+      checkers_variant TEXT,
       winner TEXT,
       created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
     )
@@ -99,6 +105,19 @@ function createTables() {
   db.run('CREATE INDEX IF NOT EXISTS idx_rankings_username ON rankings(username)');
   db.run('CREATE INDEX IF NOT EXISTS idx_rankings_difficulty ON rankings(difficulty)');
   db.run('CREATE INDEX IF NOT EXISTS idx_rankings_clerk ON rankings(clerk_id)');
+  migrateColumn('rankings', 'result', 'TEXT');
+  migrateColumn('rankings', 'checkers_variant', 'TEXT');
+  migrateColumn('game_sessions', 'checkers_variant', 'TEXT');
+  db.run('CREATE INDEX IF NOT EXISTS idx_rankings_result ON rankings(result)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_rankings_variant ON rankings(checkers_variant)');
+}
+
+function migrateColumn(tableName: string, columnName: string, definition: string) {
+  const info = db.exec(`PRAGMA table_info(${tableName})`)[0]?.values || [];
+  const exists = info.some((row: any[]) => row[1] === columnName);
+  if (!exists) {
+    db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
 }
 
 // Guardar base de datos a archivo

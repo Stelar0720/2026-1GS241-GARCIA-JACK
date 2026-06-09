@@ -9,46 +9,23 @@ export const Route = createRootRoute({
 });
 
 function RankingPage() {
-  const [rankings, setRankings] = useState<RankingEntry[]>([]);
+  const [victories, setVictories] = useState<RankingEntry[]>([]);
+  const [defeats, setDefeats] = useState<RankingEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const username = localStorage.getItem('username') || undefined;
 
   useEffect(() => {
     const fetchRankings = async () => {
       try {
-        const response = await fetch(`${API_URL}/ranking/top?limit=20`);
+        const response = await fetch(`${API_URL}/ranking/top?limit=5`);
         if (!response.ok) throw new Error('Error al cargar rankings');
         const data = await response.json();
-        setRankings(data.rankings || []);
+        setVictories(data.victories || []);
+        setDefeats(data.defeats || []);
       } catch (err) {
         console.error('Error:', err);
-        // Usar datos de ejemplo si la API no está disponible
-        setRankings([
-          {
-            id: 1,
-            username: 'Erick',
-            moves: 50,
-            difficulty: 'hard',
-            gameMode: 'pva',
-            createdAt: new Date()
-          },
-          {
-            id: 2,
-            username: 'Bethel',
-            moves: 30,
-            difficulty: 'hard',
-            gameMode: 'pva',
-            createdAt: new Date()
-          },
-          {
-            id: 3,
-            username: 'Juan',
-            moves: 45,
-            difficulty: 'medium',
-            gameMode: 'pva',
-            createdAt: new Date()
-          }
-        ]);
+        setVictories([]);
+        setDefeats([]);
       } finally {
         setLoading(false);
       }
@@ -59,25 +36,21 @@ function RankingPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-100 to-amber-200 p-4">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         <Link to="/" className="inline-block mb-6">
-          <button className="peak-button">
-            ← Volver al Inicio
-          </button>
+          <button className="peak-button">Volver al Inicio</button>
         </Link>
 
-        <RankingTable
-          rankings={rankings}
-          currentUsername={username}
-        />
-
-        {/* Info */}
-        <div className="mt-6 peak-paper peak-border p-4 text-center">
-          <p className="peak-text text-sm text-gray-600">
-            💡 El ranking se ordena por cantidad de movimientos.<br />
-            ¡Menos movimientos = mejor posición!
-          </p>
-        </div>
+        {loading ? (
+          <div className="peak-paper peak-border p-6 text-center">
+            <p className="peak-text">Cargando ranking...</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <RankingTable rankings={victories} currentUsername={username} title="RANKING GLOBAL - VICTORIAS" />
+            <RankingTable rankings={defeats} currentUsername={username} title="RANKING GLOBAL - DERROTAS" />
+          </div>
+        )}
       </div>
     </div>
   );

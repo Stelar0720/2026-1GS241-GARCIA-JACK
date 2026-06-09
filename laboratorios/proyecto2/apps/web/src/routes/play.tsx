@@ -4,7 +4,7 @@ import { createRootRoute } from '@tanstack/react-start';
 import { GameBoard } from '~/components/Board';
 import { GameOverModal } from '~/components/GameOverModal';
 import { TutorialModal } from '~/components/TutorialModal';
-import type { GameState, Move, Position, Difficulty } from '~/lib/api-client';
+import type { GameState, Move, Position, Difficulty, CheckersVariant, Player } from '~/lib/api-client';
 
 export const Route = createRootRoute({
   component: GamePage,
@@ -26,6 +26,8 @@ function GamePage() {
   const username = params.get('username') || 'Jugador';
   const isGuest = params.get('guest') === 'true';
   const clerkId = params.get('clerkId') || undefined;
+  const checkersVariant = (params.get('checkersVariant') || 'english') as CheckersVariant;
+  const playerColor = (params.get('playerColor') || 'black') as Player;
 
   // Inicializar juego
   const initGame = useCallback(async () => {
@@ -34,7 +36,7 @@ function GamePage() {
       const response = await fetch(`http://localhost:3001/game/init`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty, gameMode: 'pva', username })
+        body: JSON.stringify({ difficulty, gameMode: 'pva', username, checkersVariant, playerColor })
       });
 
       if (!response.ok) throw new Error('Error al iniciar el juego');
@@ -46,7 +48,7 @@ function GamePage() {
       setError(err instanceof Error ? err.message : 'Error desconocido');
       setLoading(false);
     }
-  }, [difficulty, username]);
+  }, [difficulty, username, checkersVariant, playerColor]);
 
   useEffect(() => {
     initGame();
@@ -128,7 +130,8 @@ function GamePage() {
           gameId: gameState.id,
           move,
           username,
-          clerkId
+          playerColor,
+          checkersVariant
         })
       });
 

@@ -5,7 +5,7 @@ Un juego de checkers clásico con sistema de ranking, microservicios y IA A* con
 ## 📋 Características
 
 - 🎮 **UI Estilo PEAK** - Tipografía antigua con diseño tipo pergamino
-- 🤖 **IA A*** - 3 niveles de dificultad con algoritmo Minimax + Alpha-Beta pruning
+- 🤖 **IA A*** - 3 niveles de dificultad con búsqueda A* y heurística de tablero
 - 🏆 **Sistema de Ranking** - Persistido en SQLite, orden por menos movimientos
 - ⚙️ **Arquitectura Microservicios** - Game, AI, Ranking, Heartbeat, Kernel
 - 📦 **Docker Ready** - Desplegable con docker-compose
@@ -88,11 +88,11 @@ docker compose -f docker/docker-compose.yml up --build
 
 ## 🎯 Dificultades IA
 
-| Dificultad | Profundidad | Alpha-Beta | Descripción |
-|------------|-------------|-----------|-------------|
-| Fácil | 2 | No | Para principiantes |
-| Medio | 4 | Sí | Desafío equilibrado |
-| Difícil | 6 | Sí | IA optimizada al máximo |
+| Dificultad | Profundidad A* | Enfoque | Descripción |
+|------------|----------------|---------|-------------|
+| Fácil | 2 | Búsqueda limitada | Para principiantes |
+| Medio | 4 | Búsqueda A* intermedia | Desafío equilibrado |
+| Difícil | 6 | Búsqueda A* más profunda | IA optimizada al máximo |
 
 ## 📊 Sistema de Ranking
 
@@ -124,8 +124,8 @@ El juego incluye un modal-tutorial con:
 
 ## ⚠️ Optimizaciones
 
-- **AI con Memoización**: Evita recálculo de estados
-- **Alpha-Beta Pruning**: Reduce espacio de búsqueda
+- **IA A***: Prioriza estados con menor `f = g + h`
+- **Estados visitados**: Evita reexplorar tableros con peor costo acumulado
 - **Límites de Memoria Docker**: max 512MB por contenedor
 - **SQLite WAL Mode**: Mejor concurrencia
 
@@ -138,3 +138,43 @@ bun run test
 ## 📝 Licencia
 
 MIT - Proyecto académico
+## Tienda de skins y Stripe Checkout
+
+La tienda esta disponible en:
+
+```bash
+http://localhost:5173/shop
+```
+
+Persistencia local de demo por usuario:
+
+```txt
+checkers_owned_skins_<clerkId>
+checkers_equipped_skin_<clerkId>
+```
+
+Configura Stripe en el archivo `.env` de la raiz:
+
+```env
+VITE_STRIPE_PUBLIC_KEY=pk_test_...
+STRIPE_SECRET_KEY=sk_test_...
+
+# Opcional: si los dejas como placeholder, el backend usara price_data inline.
+STRIPE_PRICE_GOLD=price_REEMPLAZAR_GOLD
+STRIPE_PRICE_NEON=price_REEMPLAZAR_NEON
+STRIPE_PRICE_MEDIEVAL=price_REEMPLAZAR_MEDIEVAL
+STRIPE_PRICE_FIRE_ICE=price_REEMPLAZAR_FIRE_ICE
+STRIPE_PRICE_ROYAL=price_REEMPLAZAR_ROYAL
+```
+
+Para comprar skins el jugador debe haber iniciado sesion con Clerk. El frontend envia `{ "skinId": "gold", "clerkId": "..." }` al backend. El backend decide el nombre y precio de la skin. Para esta demo universitaria no es obligatorio crear productos ni Price IDs en Stripe Dashboard: si `STRIPE_PRICE_*` esta vacio o como `price_REEMPLAZAR_*`, el backend crea el precio inline con `price_data` por $2.99 USD.
+
+Rutas del flujo:
+
+```txt
+/shop
+/shop/success?skinId=gold
+/shop/cancel
+```
+
+Para probar el pago usa tarjetas de prueba de Stripe, por ejemplo `4242 4242 4242 4242`, cualquier fecha futura, cualquier CVC y cualquier codigo postal.

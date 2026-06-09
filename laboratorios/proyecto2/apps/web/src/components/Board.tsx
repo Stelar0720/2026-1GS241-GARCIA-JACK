@@ -1,5 +1,7 @@
 import React from 'react';
 import type { Board, Position, Piece as PieceType, Move } from '~/lib/api-client';
+import { getEquippedSkin } from '~/lib/skin-storage';
+import { getSkinById } from '~/lib/skins';
 import { Piece } from './Piece';
 
 interface BoardProps {
@@ -13,6 +15,9 @@ interface BoardProps {
 const CELL_SIZE = 70; // pixels
 
 export function GameBoard({ board, selectedPiece, validMoves, currentPlayer, onCellClick }: BoardProps) {
+  const userId = typeof window !== 'undefined' ? window.localStorage.getItem('clerkId') : null;
+  const skinAssets = getSkinById(getEquippedSkin(userId)).assets;
+
   const isSelected = (row: number, col: number) => {
     return selectedPiece?.row === row && selectedPiece?.col === col;
   };
@@ -34,7 +39,13 @@ export function GameBoard({ board, selectedPiece, validMoves, currentPlayer, onC
   };
 
   return (
-    <div className="game-board">
+    <div
+      className="game-board"
+      style={{
+        gridTemplateColumns: `repeat(${board.length}, 1fr)`,
+        gridTemplateRows: `repeat(${board.length}, 1fr)`,
+      }}
+    >
       {board.map((row, rowIndex) =>
         row.map((cell, colIndex) => {
           const isDark = (rowIndex + colIndex) % 2 === 1;
@@ -58,6 +69,7 @@ export function GameBoard({ board, selectedPiece, validMoves, currentPlayer, onC
                   piece={piece}
                   isSelected={selected}
                   onClick={() => onCellClick(rowIndex, colIndex)}
+                  skinAssets={skinAssets}
                 />
               )}
               {valid && !piece && (

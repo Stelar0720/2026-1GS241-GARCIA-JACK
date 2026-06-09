@@ -10,6 +10,7 @@
     "dev": "echo 'Usa dos terminales: bun run dev:api y bun run dev:web'",
     "dev:api": "cd apps/api && bun run dev",
     "dev:web": "cd apps/web && bun run dev",
+    "dev:web:5174": "PORT=5174 bun run dev:web",
     "start:api": "cd apps/api && bun run start",
     "start:web": "cd apps/web && bun run start",
     "docker:up": "docker compose -f docker/docker-compose.yml up --build -d",

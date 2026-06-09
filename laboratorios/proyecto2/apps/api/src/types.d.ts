@@ -6,3 +6,4 @@ declare const require: any;
 declare const process: any;
 declare const console: any;
 declare const Buffer: any;
+declare const Bun: any;

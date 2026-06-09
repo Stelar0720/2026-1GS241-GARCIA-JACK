@@ -19,6 +19,18 @@ export const routeTree: RouteTree = {
       component: () => import('./routes/ranking.tsx'),
     },
     {
+      path: '/shop',
+      component: () => import('./routes/shop.tsx'),
+    },
+    {
+      path: '/shop/success',
+      component: () => import('./routes/shop-success.tsx'),
+    },
+    {
+      path: '/shop/cancel',
+      component: () => import('./routes/shop-cancel.tsx'),
+    },
+    {
       path: '/tutorial',
       component: () => import('./routes/tutorial.tsx'),
     },

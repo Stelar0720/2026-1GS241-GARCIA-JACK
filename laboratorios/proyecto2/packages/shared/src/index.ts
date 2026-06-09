@@ -4,6 +4,7 @@ export type Player = 'red' | 'black';
 export type GameStatus = 'waiting' | 'playing' | 'won' | 'draw';
 export type Difficulty = 'easy' | 'medium' | 'hard';
 export type GameMode = 'pvp' | 'pva';
+export type CheckersVariant = 'international' | 'spanish' | 'english' | 'turkish' | 'russian';
 
 export interface Position {
   row: number;
@@ -34,6 +35,7 @@ export interface GameState {
   status: GameStatus;
   difficulty?: Difficulty;
   gameMode: GameMode;
+  checkersVariant?: CheckersVariant;
   winner?: Player;
 }
 
@@ -43,6 +45,8 @@ export interface RankingEntry {
   moves: number;
   difficulty: Difficulty;
   gameMode: GameMode;
+  result?: 'victory' | 'defeat';
+  checkersVariant?: CheckersVariant;
   createdAt: Date;
   deviceHash?: string;
   clerkId?: string;
@@ -86,7 +90,7 @@ export const AI_CONFIGS: Record<Difficulty, AIConfig> = {
   medium: {
     difficulty: 'medium',
     maxDepth: 4,
-    useAlphaBeta: true,
+    useAlphaBeta: false,
     weights: {
       pieceValue: 10,
       kingValue: 20,
@@ -98,7 +102,7 @@ export const AI_CONFIGS: Record<Difficulty, AIConfig> = {
   hard: {
     difficulty: 'hard',
     maxDepth: 6,
-    useAlphaBeta: true,
+    useAlphaBeta: false,
     weights: {
       pieceValue: 10,
       kingValue: 25,

@@ -26,6 +26,25 @@ describe('Checkers Game Logic', () => {
     expect(redPieces).toBe(12);
   });
 
+  it('should create international board with 10x10 and 20 pieces per player', () => {
+    const board = createInitialBoard('international');
+    const pieces = board.flat().filter(Boolean);
+
+    expect(board.length).toBe(10);
+    expect(board[0].length).toBe(10);
+    expect(pieces.filter(piece => piece?.player === 'black').length).toBe(20);
+    expect(pieces.filter(piece => piece?.player === 'red').length).toBe(20);
+  });
+
+  it('should create turkish board with orthogonal 16 pieces per player setup', () => {
+    const board = createInitialBoard('turkish');
+    const pieces = board.flat().filter(Boolean);
+
+    expect(board.length).toBe(8);
+    expect(pieces.filter(piece => piece?.player === 'black').length).toBe(16);
+    expect(pieces.filter(piece => piece?.player === 'red').length).toBe(16);
+  });
+
   it('should create game state with correct initial values', () => {
     const game = createGameState('medium', 'pva');
 
