@@ -1,0 +1,25 @@
+{
+  "clientes": [
+    {
+      "cip": "12345",
+      "nombre": "Juan Pérez",
+      "telefono": "987654321",
+      "email": "juan.perez@ejemplo.com",
+      "fecha_registro": "2024-01-15"
+    },
+    {
+      "cip": "67890",
+      "nombre": "María García",
+      "telefono": "912345678",
+      "email": "maria.garcia@ejemplo.com",
+      "fecha_registro": "2024-02-20"
+    },
+    {
+      "cip": "54321",
+      "nombre": "Carlos López",
+      "telefono": "998877665",
+      "email": "carlos.lopez@ejemplo.com",
+      "fecha_registro": "2024-03-10"
+    }
+  ]
+}
