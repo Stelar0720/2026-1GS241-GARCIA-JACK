@@ -21,13 +21,26 @@ test("home: muestra hero, catálogo y compra", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 2 })).toContainText(
     "Kits para arrancar en una tarde",
   );
-  await expect(page.getByRole("button", { name: "Comprar kit" })).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Agregar al carrito" })).toHaveCount(3);
 
   await expectAnyVisibleText(page, [
     "Iniciar sesión",
     "Configura Clerk para login",
     "Panel",
   ]);
+});
+
+test("carrito: persiste en localStorage tras recargar la página", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Agregar al carrito" }).first().click();
+
+  const cartButton = page.getByRole("button", { name: /Carrito con \d+ productos?/ });
+  await expect(cartButton).toContainText("1");
+
+  await page.reload();
+
+  await expect(page.getByRole("button", { name: /Carrito con \d+ productos?/ })).toContainText("1");
 });
 
 test("sign-in: la ruta responde correctamente", async ({ page }) => {
