@@ -427,8 +427,8 @@ Bun.serve({
       try {
         const session = await stripeClient.checkout.sessions.create({
           mode: "payment",
-          success_url: `${storefrontUrl}/dashboard?payment=success`,
-          cancel_url: `${storefrontUrl}/dashboard?payment=cancelled`,
+          success_url: `${storefrontUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${storefrontUrl}/checkout/cancelled`,
           customer_email: normalizedEmail,
           metadata: {
             productId: checkoutLines[0].product.id,
