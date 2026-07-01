@@ -789,6 +789,61 @@ function CustomerDashboardPage() {
   );
 }
 
+function CheckoutSuccessPage() {
+  const location = useLocation();
+  const sessionId = useMemo(() => new URLSearchParams(location.search).get("session_id"), [location.search]);
+
+  return (
+    <main className="container" style={{ paddingBlock: "2rem" }}>
+      <section className="stack panel" style={{ maxWidth: "760px" }}>
+        <h1 className="section-title">¡Gracias por tu compra!</h1>
+        <p>Tu pago se procesó correctamente y tu kit ya está en preparación.</p>
+        {sessionId ? <p className="meta">Referencia de pago: {sessionId.slice(0, 16)}...</p> : null}
+        <div className="stack">
+          <h3>Próximos pasos</h3>
+          <ul>
+            <li>Vas a recibir la confirmación y el seguimiento de tu pedido en tu panel.</li>
+            <li>Preparamos tu kit y coordinamos el envío o retiro según corresponda.</li>
+            <li>Podés revisar el estado de tu compra cuando quieras desde "Mi cuenta".</li>
+          </ul>
+        </div>
+        <div className="cta-row">
+          <Link className="button button-primary" to="/dashboard">
+            Ir a mi cuenta
+          </Link>
+          <Link className="button button-outline" to="/">
+            Volver al catálogo
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function CheckoutCancelledPage() {
+  return (
+    <main className="container" style={{ paddingBlock: "2rem" }}>
+      <section className="stack panel" style={{ maxWidth: "760px" }}>
+        <h1 className="section-title">Pago cancelado</h1>
+        <p>No se completó el cobro. Tu carrito sigue disponible para intentarlo de nuevo.</p>
+        <div className="stack">
+          <h3>Motivos comunes</h3>
+          <ul>
+            <li>Cerraste o volviste atrás en la ventana de pago de Stripe.</li>
+            <li>La tarjeta fue rechazada por el banco emisor.</li>
+            <li>La sesión de pago expiró por inactividad.</li>
+          </ul>
+        </div>
+        <div className="cta-row">
+          <Link className="button button-primary" to="/">
+            Volver al catálogo
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function AdminBridgePage() {
   const adminAppUrl = getAdminAppUrl();
   return (
@@ -869,6 +924,8 @@ function AppWithClerk() {
           }
         />
         <Route path="/admin" element={<AdminBridgePage />} />
+        <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
+        <Route path="/checkout/cancelled" element={<CheckoutCancelledPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </RootLayout>
@@ -1097,6 +1154,8 @@ function AppWithoutClerk() {
             </main>
           }
         />
+        <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
+        <Route path="/checkout/cancelled" element={<CheckoutCancelledPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <footer className="footer">
