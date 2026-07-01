@@ -1,0 +1,16 @@
+app = "urbansprout-admin"
+primary_region = "mia"
+
+[build]
+  dockerfile = "Dockerfile.backoffice"
+
+[env]
+  VITE_API_URL = "https://urbansprout-api.fly.dev"
+  VITE_STOREFRONT_URL = "https://urbansprout-web.fly.dev"
+
+[http_service]
+  internal_port = 5173
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
