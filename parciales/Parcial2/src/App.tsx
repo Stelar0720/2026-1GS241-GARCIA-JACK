@@ -161,17 +161,34 @@ async function createCheckoutSession(params: {
   window.location.href = parsedBody.checkoutUrl;
 }
 
+const CART_STORAGE_KEY = "urbansprout-cart";
+
+function readStoredCart(): CartItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CART_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is CartItem =>
+        typeof item?.productId === "string" && typeof item?.quantity === "number" && item.quantity > 0,
+    );
+  } catch {
+    return [];
+  }
+}
+
 function useStorefrontCart(userId: string | null, userEmail: string | null): StorefrontCart {
   const [products, setProducts] = useState<Product[]>(fallbackProducts);
   const [loadingProducts, setLoadingProducts] = useState(true);
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => readStoredCart());
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastAddedProductId, setLastAddedProductId] = useState<string | null>(null);
   const [openCartSignal, setOpenCartSignal] = useState(0);
 
-  async function loadProducts({ showLoading = true }: { showLoading?: boolean } = {}) {
-    if (showLoading) setLoadingProducts(true);
+  async function loadProducts() {
     try {
       const fetchedProducts = await fetchProductsFromApi();
       setProducts(fetchedProducts);
@@ -179,15 +196,17 @@ function useStorefrontCart(userId: string | null, userEmail: string | null): Sto
       console.warn("Failed to load products, using fallback:", error);
       setProducts(fallbackProducts);
     } finally {
-      if (showLoading) setLoadingProducts(false);
+      setLoadingProducts(false);
     }
   }
 
   useEffect(() => {
+    // Carga inicial de productos al montar; sin librería de data-fetching no hay forma de evitar esta regla.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadProducts();
 
     function refreshOnFocus() {
-      void loadProducts({ showLoading: false });
+      void loadProducts();
     }
 
     window.addEventListener("focus", refreshOnFocus);
@@ -197,6 +216,10 @@ function useStorefrontCart(userId: string | null, userEmail: string | null): Sto
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
+  }, [cartItems]);
 
   const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const cartLines = cartItems
@@ -293,10 +316,12 @@ function CartDropdown({
   | "checkoutCart"
 >) {
   const [open, setOpen] = useState(false);
+  const [lastOpenCartSignal, setLastOpenCartSignal] = useState(openCartSignal);
 
-  useEffect(() => {
+  if (openCartSignal !== lastOpenCartSignal) {
+    setLastOpenCartSignal(openCartSignal);
     if (openCartSignal > 0) setOpen(true);
-  }, [openCartSignal]);
+  }
 
   return (
     <div className="cart-menu">
@@ -445,13 +470,7 @@ function HomePage({
   loadingProducts,
   addToCart,
   cartLines,
-  cartCount,
-  cartTotal,
-  checkoutError,
-  checkingOut,
   lastAddedProductId,
-  updateCartQuantity,
-  checkoutCart,
   viewCart,
 }: StorefrontCart) {
   const { user } = useUser();
@@ -506,53 +525,6 @@ function HomePage({
           <div className="catalog-header">
             <h2 className="section-title">Kits para arrancar en una tarde</h2>
           </div>
-          {false ? <section className="cart-panel" id="carrito" aria-label="Carrito de compra">
-            <div>
-              <h3>Carrito</h3>
-              <p className="meta">
-                {cartCount === 0
-                  ? "Agrega kits del catálogo para preparar tu compra."
-                  : `${cartCount} producto${cartCount === 1 ? "" : "s"} en el carrito.`}
-              </p>
-            </div>
-            {cartLines.length > 0 ? (
-              <div className="cart-lines">
-                {cartLines.map(({ product, quantity }) => (
-                  <div className="cart-line" key={product.id}>
-                    <div>
-                      <strong>{product.name}</strong>
-                      <span>{formatMoney(product.priceUsd * quantity)}</span>
-                    </div>
-                    <div className="quantity-control">
-                      <button type="button" onClick={() => updateCartQuantity(product.id, quantity - 1)}>
-                        −
-                      </button>
-                      <span>{quantity}</span>
-                      <button
-                        type="button"
-                        disabled={quantity >= product.stock}
-                        onClick={() => updateCartQuantity(product.id, quantity + 1)}
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            <div className="cart-summary">
-              <strong>Total: {formatMoney(cartTotal)}</strong>
-              <button
-                className="button button-primary"
-                type="button"
-                disabled={cartCount === 0 || checkingOut}
-                onClick={() => void checkoutCart()}
-              >
-                {checkingOut ? "Redirigiendo..." : "Comprar carrito"}
-              </button>
-            </div>
-            {checkoutError ? <p className="status-error">{checkoutError}</p> : null}
-          </section> : null}
           {loadingProducts ? (
             <p className="loading-text">Cargando productos...</p>
           ) : (
@@ -789,6 +761,61 @@ function CustomerDashboardPage() {
   );
 }
 
+function CheckoutSuccessPage() {
+  const location = useLocation();
+  const sessionId = useMemo(() => new URLSearchParams(location.search).get("session_id"), [location.search]);
+
+  return (
+    <main className="container" style={{ paddingBlock: "2rem" }}>
+      <section className="stack panel" style={{ maxWidth: "760px" }}>
+        <h1 className="section-title">¡Gracias por tu compra!</h1>
+        <p>Tu pago se procesó correctamente y tu kit ya está en preparación.</p>
+        {sessionId ? <p className="meta">Referencia de pago: {sessionId.slice(0, 16)}...</p> : null}
+        <div className="stack">
+          <h3>Próximos pasos</h3>
+          <ul>
+            <li>Vas a recibir la confirmación y el seguimiento de tu pedido en tu panel.</li>
+            <li>Preparamos tu kit y coordinamos el envío o retiro según corresponda.</li>
+            <li>Podés revisar el estado de tu compra cuando quieras desde "Mi cuenta".</li>
+          </ul>
+        </div>
+        <div className="cta-row">
+          <Link className="button button-primary" to="/dashboard">
+            Ir a mi cuenta
+          </Link>
+          <Link className="button button-outline" to="/">
+            Volver al catálogo
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function CheckoutCancelledPage() {
+  return (
+    <main className="container" style={{ paddingBlock: "2rem" }}>
+      <section className="stack panel" style={{ maxWidth: "760px" }}>
+        <h1 className="section-title">Pago cancelado</h1>
+        <p>No se completó el cobro. Tu carrito sigue disponible para intentarlo de nuevo.</p>
+        <div className="stack">
+          <h3>Motivos comunes</h3>
+          <ul>
+            <li>Cerraste o volviste atrás en la ventana de pago de Stripe.</li>
+            <li>La tarjeta fue rechazada por el banco emisor.</li>
+            <li>La sesión de pago expiró por inactividad.</li>
+          </ul>
+        </div>
+        <div className="cta-row">
+          <Link className="button button-primary" to="/">
+            Volver al catálogo
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function AdminBridgePage() {
   const adminAppUrl = getAdminAppUrl();
   return (
@@ -869,6 +896,8 @@ function AppWithClerk() {
           }
         />
         <Route path="/admin" element={<AdminBridgePage />} />
+        <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
+        <Route path="/checkout/cancelled" element={<CheckoutCancelledPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </RootLayout>
@@ -1097,6 +1126,8 @@ function AppWithoutClerk() {
             </main>
           }
         />
+        <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
+        <Route path="/checkout/cancelled" element={<CheckoutCancelledPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <footer className="footer">

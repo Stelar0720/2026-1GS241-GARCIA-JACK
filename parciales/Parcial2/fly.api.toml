@@ -1,0 +1,28 @@
+app = "urbansprout-api"
+primary_region = "mia"
+
+[build]
+  dockerfile = "Dockerfile.bun-api"
+
+[env]
+  API_PORT = "4000"
+  BUN_DB_PATH = "/data/urbansprout.sqlite"
+  ALLOWED_ORIGINS = "https://urbansprout-web.fly.dev,https://urbansprout-admin.fly.dev"
+
+[[mounts]]
+  source = "urbansprout_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    path = "/health"
+    method = "GET"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"

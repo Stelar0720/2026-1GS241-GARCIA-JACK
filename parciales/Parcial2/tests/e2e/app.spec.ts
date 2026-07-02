@@ -21,13 +21,26 @@ test("home: muestra hero, catálogo y compra", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 2 })).toContainText(
     "Kits para arrancar en una tarde",
   );
-  await expect(page.getByRole("button", { name: "Comprar kit" })).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Agregar al carrito" })).toHaveCount(3);
 
   await expectAnyVisibleText(page, [
     "Iniciar sesión",
     "Configura Clerk para login",
     "Panel",
   ]);
+});
+
+test("carrito: persiste en localStorage tras recargar la página", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Agregar al carrito" }).first().click();
+
+  const cartButton = page.getByRole("button", { name: /Carrito con \d+ productos?/ });
+  await expect(cartButton).toContainText("1");
+
+  await page.reload();
+
+  await expect(page.getByRole("button", { name: /Carrito con \d+ productos?/ })).toContainText("1");
 });
 
 test("sign-in: la ruta responde correctamente", async ({ page }) => {
@@ -67,6 +80,24 @@ test("admin: protege o renderiza estado esperado", async ({ page }) => {
   expect(response).not.toBeNull();
   expect(response!.status()).toBeLessThan(500);
   await expectAnyVisibleText(page, ["Backoffice separado", "Abrir backoffice"]);
+});
+
+test("checkout success: muestra confirmación con la referencia de pago", async ({ page }) => {
+  const response = await page.goto("/checkout/success?session_id=cs_test_abcdefghijklmnop");
+  expect(response).not.toBeNull();
+  expect(response!.status()).toBeLessThan(500);
+
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Gracias por tu compra");
+  await expect(page.getByText("cs_test_abcdefgh")).toBeVisible();
+});
+
+test("checkout cancelled: muestra motivos comunes y vuelta al catálogo", async ({ page }) => {
+  const response = await page.goto("/checkout/cancelled");
+  expect(response).not.toBeNull();
+  expect(response!.status()).toBeLessThan(500);
+
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Pago cancelado");
+  await expect(page.getByRole("link", { name: "Volver al catálogo" })).toBeVisible();
 });
 
 test("api checkout: devuelve error controlado para producto inválido", async ({ page }) => {
