@@ -1,5 +1,5 @@
 app = "urbansprout-admin"
-primary_region = "mia"
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile.backoffice"

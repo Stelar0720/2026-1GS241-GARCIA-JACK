@@ -1,5 +1,5 @@
 app = "urbansprout-api"
-primary_region = "mia"
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile.bun-api"

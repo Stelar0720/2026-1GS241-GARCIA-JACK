@@ -23,7 +23,7 @@ fly apps create urbansprout-admin   # opcional, si el free allowance alcanza
 ## 3. Volumen persistente para SQLite (solo la API lo necesita)
 
 ```bash
-fly volumes create urbansprout_data --app urbansprout-api --region mia --size 1
+fly volumes create urbansprout_data --app urbansprout-api --region iad --size 1
 ```
 
 ## 4. Secrets (no van en los .toml, se cargan aparte)
@@ -50,4 +50,4 @@ fly deploy --config fly.admin.toml --app urbansprout-admin   # opcional
 
 - Los Dockerfiles existentes corren en modo desarrollo (`bun run dev` / `npm run dev`). Funciona para este avance; migrar a build de producción queda como mejora futura.
 - Si el free allowance de la cuenta no alcanza para las 3 apps, priorizar `urbansprout-api` + `urbansprout-web` (el storefront funcionando es lo que pide la rúbrica); el backoffice puede quedar para acceso local en este avance.
-- `region = "mia"` (Miami) por cercanía a Panamá; cambiarlo si Fly sugiere otra región más barata/disponible para la cuenta.
+- `region = "iad"` (Ashburn, Virginia) por cercanía a Panamá (Fly retiró la región Miami); cambiarlo si Fly sugiere otra región más barata/disponible para la cuenta.
