@@ -18,9 +18,9 @@ test("home: muestra hero, catálogo y compra", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("heading", { level: 1 })).toContainText("mini huerto");
-  await expect(page.getByRole("heading", { level: 2 })).toContainText(
-    "Kits para arrancar en una tarde",
-  );
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Kits para arrancar en una tarde" }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Agregar al carrito" })).toHaveCount(3);
 
   await expectAnyVisibleText(page, [
@@ -65,6 +65,60 @@ test("tema: el toggle claro/oscuro persiste tras recargar", async ({ page }) => 
   await page.reload();
   const persistedTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   expect(persistedTheme).toBe(toggledTheme);
+});
+
+test("landing: muestra estadísticas, propuesta de valor y testimonios", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText("hogares ya cultivan con nosotros")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cultivar en la ciudad, sin fricción" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cómo funciona" })).toBeVisible();
+  await expect(page.getByText("María G.")).toBeVisible();
+});
+
+test("faq: expande y colapsa una pregunta", async ({ page }) => {
+  await page.goto("/");
+
+  const question = page.getByRole("button", { name: "¿Cuánta luz necesita mi kit?" });
+  await question.scrollIntoViewIfNeeded();
+  await question.click();
+  await expect(page.getByText("los microverdes crecen con luz indirecta")).toBeVisible();
+
+  await question.click();
+  await expect(page.getByText("los microverdes crecen con luz indirecta")).toHaveCount(0);
+});
+
+test("detalle de producto: navega desde el catálogo y agrega al carrito", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("link", { name: "Ver detalles" }).first().click();
+  await expect(page).toHaveURL(/\/producto\//);
+  await expect(page.getByText("Qué incluye la caja")).toBeVisible();
+  await expect(page.getByText("Así se cultiva")).toBeVisible();
+  await expect(page.getByText("Luz necesaria")).toBeVisible();
+
+  await page.getByRole("button", { name: "Agregar al carrito" }).click();
+  await expect(page.getByRole("button", { name: /Carrito con \d+ productos?/ })).toContainText("1");
+});
+
+test("legales: términos, privacidad y devoluciones muestran contenido", async ({ page }) => {
+  await page.goto("/terminos");
+  await expect(page.getByRole("heading", { name: "Términos y condiciones" })).toBeVisible();
+
+  await page.goto("/privacidad");
+  await expect(page.getByRole("heading", { name: "Política de privacidad" })).toBeVisible();
+
+  await page.goto("/devoluciones");
+  await expect(page.getByRole("heading", { name: "Envíos y devoluciones" })).toBeVisible();
+});
+
+test("footer: contiene los enlaces legales", async ({ page }) => {
+  await page.goto("/");
+
+  const footer = page.locator("footer");
+  await expect(footer.getByRole("link", { name: "Términos y condiciones" })).toBeVisible();
+  await expect(footer.getByRole("link", { name: "Política de privacidad" })).toBeVisible();
+  await expect(footer.getByRole("link", { name: "Envíos y devoluciones" })).toBeVisible();
 });
 
 test("sign-in: la ruta responde correctamente", async ({ page }) => {
