@@ -43,6 +43,30 @@ test("carrito: persiste en localStorage tras recargar la página", async ({ page
   await expect(page.getByRole("button", { name: /Carrito con \d+ productos?/ })).toContainText("1");
 });
 
+test("carrito: se puede quitar un producto agregado", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Agregar al carrito" }).first().click();
+  await expect(page.getByRole("button", { name: /Carrito con \d+ productos?/ })).toContainText("1");
+
+  // El dropdown del carrito se abre al agregar; quitamos con el botón de eliminar.
+  await page.getByRole("button", { name: /Eliminar .* del carrito/ }).first().click();
+  await expect(page.getByRole("button", { name: /Carrito con \d+ productos?/ })).toContainText("0");
+});
+
+test("tema: el toggle claro/oscuro persiste tras recargar", async ({ page }) => {
+  await page.goto("/");
+
+  const initialTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  await page.getByRole("button", { name: /Cambiar a modo (claro|oscuro)/ }).click();
+  const toggledTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  expect(toggledTheme).not.toBe(initialTheme);
+
+  await page.reload();
+  const persistedTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  expect(persistedTheme).toBe(toggledTheme);
+});
+
 test("sign-in: la ruta responde correctamente", async ({ page }) => {
   const response = await page.goto("/sign-in");
 
