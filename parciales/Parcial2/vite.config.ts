@@ -12,6 +12,10 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    host: true,
+    // El storefront corre en modo dev dentro de Fly; Vite 8 bloquea hosts
+    // desconocidos por defecto, así que habilitamos los dominios de despliegue.
+    allowedHosts: [".fly.dev", "localhost"],
     watch: {
       ignored: [
         "**/data/**",
