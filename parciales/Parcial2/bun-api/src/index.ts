@@ -5,8 +5,10 @@ import { extname, join } from "node:path";
 import {
   createProduct,
   deleteProduct,
+  generateSalesReport,
   getActiveProduct,
   getInventoryStock,
+  getOrderById,
   listInventory,
   listOrders,
   listOrdersByBuyer,
@@ -15,11 +17,22 @@ import {
   OrderStatus,
   ProductInput,
   ProductRecord,
+  queryAuditLogs,
+  recordAuditLog,
   updateInventory,
   updateOrderStatus,
   updateProduct,
   upsertOrderFromCheckout,
 } from "./db";
+import {
+  extractBearerKey,
+  Permission,
+  permissionsForRole,
+  resolveRole,
+  Role,
+  roleHasPermission,
+  ROLE_PERMISSIONS,
+} from "./auth";
 
 const port = Number(process.env.API_PORT || 4000);
 const uploadsDir = join(process.cwd(), "public", "uploads");
@@ -48,6 +61,51 @@ function jsonResponse(body: unknown, options: { status?: number; origin?: string
     status: options.status ?? 200,
     headers: getCorsHeaders(options.origin ?? null),
   });
+}
+
+// Resuelve el rol del request y valida el permiso requerido.
+// Devuelve el rol si está autorizado, o una Response de error (401/403) si no.
+function authorize(
+  req: Request,
+  permission: Permission,
+  origin: string | null,
+): { role: Role } | { error: Response } {
+  const key = extractBearerKey(req.headers.get("authorization"));
+  const role = resolveRole(key);
+
+  if (role === "public") {
+    return {
+      error: jsonResponse(
+        { error: "Falta o es inválida la API key (Authorization: Bearer <key>)." },
+        { status: 401, origin },
+      ),
+    };
+  }
+
+  if (!roleHasPermission(role, permission)) {
+    return {
+      error: jsonResponse(
+        { error: `El rol '${role}' no tiene el permiso '${permission}'.` },
+        { status: 403, origin },
+      ),
+    };
+  }
+
+  return { role };
+}
+
+function toCsv(rows: Record<string, unknown>[]): string {
+  if (rows.length === 0) return "";
+  const headers = Object.keys(rows[0]);
+  const escapeCell = (value: unknown) => {
+    const text = value === null || value === undefined ? "" : String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const lines = [headers.join(",")];
+  for (const row of rows) {
+    lines.push(headers.map((header) => escapeCell(row[header])).join(","));
+  }
+  return lines.join("\n");
 }
 
 function makeUploadedImageName(fileName: string) {
@@ -361,7 +419,9 @@ Bun.serve({
         return jsonResponse({ error: parsed.error }, { status: 400, origin });
       }
 
-      return jsonResponse({ data: createProduct(parsed.data) }, { status: 201, origin });
+      const created = createProduct(parsed.data);
+      recordAuditLog({ actor: "backoffice", action: "product.create", resource: created?.id ?? "", details: parsed.data.name });
+      return jsonResponse({ data: created }, { status: 201, origin });
     }
 
     if (url.pathname.startsWith("/products/")) {
@@ -381,6 +441,7 @@ Bun.serve({
           return jsonResponse({ error: "Producto no encontrado." }, { status: 404, origin });
         }
 
+        recordAuditLog({ actor: "backoffice", action: "product.update", resource: productId });
         return jsonResponse({ data: product }, { origin });
       }
 
@@ -390,6 +451,7 @@ Bun.serve({
           return jsonResponse({ error: "Producto no encontrado." }, { status: 404, origin });
         }
 
+        recordAuditLog({ actor: "backoffice", action: "product.delete", resource: productId });
         return jsonResponse({ ok: true }, { origin });
       }
     }
@@ -498,6 +560,7 @@ Bun.serve({
       }
 
       updateOrderStatus(orderId, body.status);
+      recordAuditLog({ actor: "backoffice", action: "order.status", resource: orderId, details: body.status });
       return jsonResponse({ ok: true }, { origin });
     }
 
@@ -517,6 +580,7 @@ Bun.serve({
       }
 
       updateInventory({ sku, stock: body.stock, minimumStock: body.minimumStock ?? 0 });
+      recordAuditLog({ actor: "backoffice", action: "inventory.update", resource: sku, details: `stock=${body.stock}` });
       return jsonResponse({ ok: true }, { origin });
     }
 
@@ -559,6 +623,135 @@ Bun.serve({
       }
 
       return jsonResponse({ ok: true }, { origin });
+    }
+
+    // ========================================================
+    // Endpoints autenticados (para el servidor MCP y agentes)
+    // ========================================================
+
+    // Devuelve el rol asociado a la key (o "public" si no hay). Sin permiso: lo usa el MCP al arrancar.
+    if (req.method === "GET" && url.pathname === "/auth/whoami") {
+      const role = resolveRole(extractBearerKey(req.headers.get("authorization")));
+      return jsonResponse({ role, permissions: permissionsForRole(role) }, { origin });
+    }
+
+    // Matriz completa de roles y permisos (HU-050).
+    if (req.method === "GET" && url.pathname === "/auth/roles") {
+      const auth = authorize(req, "auth:read", origin);
+      if ("error" in auth) return auth.error;
+      return jsonResponse({ data: ROLE_PERMISSIONS }, { origin });
+    }
+
+    // Verifica si un rol tiene un permiso (HU-025, authorize_user).
+    if (req.method === "POST" && url.pathname === "/auth/authorize") {
+      const auth = authorize(req, "auth:read", origin);
+      if ("error" in auth) return auth.error;
+
+      const body = (await req.json()) as { role?: Role; permission?: Permission };
+      if (!body.role || !body.permission) {
+        return jsonResponse({ error: "Se requieren 'role' y 'permission'." }, { status: 400, origin });
+      }
+      if (!(body.role in ROLE_PERMISSIONS)) {
+        return jsonResponse({ error: `Rol desconocido: ${body.role}.` }, { status: 400, origin });
+      }
+
+      return jsonResponse(
+        { role: body.role, permission: body.permission, allowed: roleHasPermission(body.role, body.permission) },
+        { origin },
+      );
+    }
+
+    // Reporte de ventas por período con desglose por producto (HU-067).
+    if (req.method === "GET" && url.pathname === "/reports/sales") {
+      const auth = authorize(req, "reports:read", origin);
+      if ("error" in auth) return auth.error;
+
+      const report = generateSalesReport({
+        from: url.searchParams.get("from")?.trim() || undefined,
+        to: url.searchParams.get("to")?.trim() || undefined,
+      });
+      recordAuditLog({ actor: auth.role, action: "reports.sales", resource: "orders" });
+      return jsonResponse({ data: report }, { origin });
+    }
+
+    // Export de datos a CSV o JSON (HU-064).
+    if (req.method === "GET" && url.pathname === "/export") {
+      const auth = authorize(req, "export:read", origin);
+      if ("error" in auth) return auth.error;
+
+      const type = url.searchParams.get("type") || "orders";
+      const format = url.searchParams.get("format") === "csv" ? "csv" : "json";
+      const rows =
+        type === "products"
+          ? (listProducts({ includeInactive: true }) as unknown as Record<string, unknown>[])
+          : type === "inventory"
+            ? (listInventory() as Record<string, unknown>[])
+            : (listOrders() as Record<string, unknown>[]);
+
+      recordAuditLog({ actor: auth.role, action: "export", resource: type, details: format });
+
+      if (format === "csv") {
+        return new Response(toCsv(rows), {
+          headers: {
+            ...getCorsHeaders(origin),
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${type}.csv"`,
+          },
+        });
+      }
+      return jsonResponse({ type, count: rows.length, data: rows }, { origin });
+    }
+
+    // Consulta del log de auditoría (HU-029).
+    if (req.method === "GET" && url.pathname === "/audit-logs") {
+      const auth = authorize(req, "audit:read", origin);
+      if ("error" in auth) return auth.error;
+
+      const logs = queryAuditLogs({
+        actor: url.searchParams.get("actor")?.trim() || undefined,
+        action: url.searchParams.get("action")?.trim() || undefined,
+        from: url.searchParams.get("from")?.trim() || undefined,
+        to: url.searchParams.get("to")?.trim() || undefined,
+        limit: Number(url.searchParams.get("limit")) || undefined,
+      });
+      return jsonResponse({ data: logs }, { origin });
+    }
+
+    // Cancela una orden pendiente (HU-066), con guard de estado.
+    if (req.method === "POST" && url.pathname.startsWith("/orders/") && url.pathname.endsWith("/cancel")) {
+      const auth = authorize(req, "orders:cancel", origin);
+      if ("error" in auth) return auth.error;
+
+      const orderId = decodeURIComponent(url.pathname.split("/")[2] || "");
+      const order = getOrderById(orderId);
+      if (!order) {
+        return jsonResponse({ error: "Orden no encontrada." }, { status: 404, origin });
+      }
+      if (order.status !== "pending") {
+        return jsonResponse(
+          { error: `No se puede cancelar una orden en estado '${order.status}'. Solo 'pending'.` },
+          { status: 409, origin },
+        );
+      }
+
+      updateOrderStatus(orderId, "cancelled");
+      recordAuditLog({ actor: auth.role, action: "order.cancel", resource: orderId });
+      return jsonResponse({ ok: true, order: getOrderById(orderId) }, { origin });
+    }
+
+    // Dispara la sincronización de órdenes pendientes con Stripe (HU-031).
+    if (req.method === "POST" && url.pathname === "/orders/sync") {
+      const auth = authorize(req, "orders:sync", origin);
+      if ("error" in auth) return auth.error;
+
+      const before = listPendingOrders().length;
+      await refreshPendingOrdersWithStripe();
+      const after = listPendingOrders().length;
+      recordAuditLog({ actor: auth.role, action: "orders.sync", resource: "orders" });
+      return jsonResponse(
+        { ok: true, pendingBefore: before, pendingAfter: after, reconciled: Math.max(0, before - after) },
+        { origin },
+      );
     }
 
     return jsonResponse({ error: "Ruta no encontrada." }, { status: 404, origin });
