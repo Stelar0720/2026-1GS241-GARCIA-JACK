@@ -4,6 +4,19 @@ import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { fetchProductsFromApi, fallbackProducts, Product } from "@/lib/catalog";
 import { getAdminAppUrl, getApiUrl, isClerkConfigured } from "@/lib/env";
 import { getUserRole } from "@/lib/roles";
+import {
+  FaqSection,
+  FinalCta,
+  Hero,
+  HowItWorks,
+  SiteFooter,
+  StatsBar,
+  Testimonials,
+  TrustMarquee,
+  ValueProps,
+} from "@/components/home-sections";
+import { ProductDetailPage } from "@/pages/product-detail";
+import { DevolucionesPage, PrivacidadPage, TerminosPage } from "@/pages/legal";
 
 type PurchaseStatus = "pending" | "paid" | "cancelled";
 type ThemeMode = "light" | "dark";
@@ -55,6 +68,8 @@ const purchaseStatusLabels: Record<PurchaseStatus, string> = {
   paid: "Pagada",
   cancelled: "Cancelada",
 };
+
+const FREE_SHIPPING_THRESHOLD_USD = 55;
 
 function useThemeMode() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -336,10 +351,22 @@ function CartDropdown({
         <strong>{cartCount}</strong>
       </button>
       {open ? (
-        <div className="cart-dropdown">
+        <div className="cart-dropdown glass">
           <div className="cart-dropdown-header">
             <h3>Carrito</h3>
             <span>{formatMoney(cartTotal)}</span>
+          </div>
+          <div className="shipping-progress">
+            <p className="meta">
+              {cartTotal >= FREE_SHIPPING_THRESHOLD_USD
+                ? "🎉 ¡Tienes envío gratis!"
+                : `Te faltan ${formatMoney(FREE_SHIPPING_THRESHOLD_USD - cartTotal)} para el envío gratis`}
+            </p>
+            <div className="shipping-bar" aria-hidden="true">
+              <span
+                style={{ width: `${Math.min(100, (cartTotal / FREE_SHIPPING_THRESHOLD_USD) * 100)}%` }}
+              />
+            </div>
           </div>
           {cartLines.length === 0 ? (
             <p className="meta">Agrega kits del catálogo para preparar tu compra.</p>
@@ -456,11 +483,7 @@ function RootLayout({ children, cart }: { children: React.ReactNode; cart: Store
         </div>
       </header>
       {children}
-      <footer className="footer">
-        <div className="container">
-          <p>UrbanSprout · by Los Extraditables 😈 NJA V.1.0.0.0</p>
-        </div>
-      </footer>
+      <SiteFooter />
     </>
   );
 }
@@ -472,58 +495,24 @@ function HomePage({
   cartLines,
   lastAddedProductId,
   viewCart,
-}: StorefrontCart) {
-  const { user } = useUser();
-  const clerkReady = isClerkConfigured();
-
+  authAction,
+}: StorefrontCart & { authAction?: React.ReactNode }) {
   return (
     <main>
-      <section className="hero">
-        <div className="container hero-grid">
-          <div>
-            <span className="hero-badge">Sostenible sin salir de casa</span>
-            <h1>Tu mini huerto en casa, aunque vivas en un apartamento.</h1>
-            <p>
-              Kits pequeños de cultivo con semillas, sustrato y guía práctica para cosechar en
-              espacios reducidos o zonas con poco acceso a tierra fértil.
-            </p>
-            <div className="cta-row">
-              <a className="button button-primary" href="#catalogo">
-                Empezar a cultivar hoy
-              </a>
-              {!user ? (
-                clerkReady ? (
-                  <Link to="/sign-up" className="button button-outline">
-                    Crear cuenta
-                  </Link>
-                ) : (
-                  <button className="button button-outline" type="button" disabled>
-                    Habilita Clerk para registro
-                  </button>
-                )
-              ) : (
-                <Link className="button button-outline" to="/dashboard">
-                  Mi cuenta
-                </Link>
-              )}
-            </div>
-          </div>
-          <div className="hero-card">
-            <h3>¿Qué incluye cada kit?</h3>
-            <ul>
-              <li>Semillas para microcultivos de ciclo corto.</li>
-              <li>Macetas compactas y sustrato ligero.</li>
-              <li>Guía de riego y luz para espacios pequeños.</li>
-              <li>Soporte básico para primeras 2 semanas.</li>
-            </ul>
-          </div>
-        </div>
-      </section>
+      <Hero authAction={authAction} />
+      <TrustMarquee />
+      <StatsBar />
+      <ValueProps />
+      <HowItWorks />
 
       <section id="catalogo" className="products">
         <div className="container">
+          <p className="section-kicker">Catálogo</p>
           <div className="catalog-header">
             <h2 className="section-title">Kits para arrancar en una tarde</h2>
+            <p className="meta catalog-note">
+              Todos incluyen envío en 24–48 h y garantía de germinación de 30 días.
+            </p>
           </div>
           {loadingProducts ? (
             <p className="loading-text">Cargando productos...</p>
@@ -534,34 +523,58 @@ function HomePage({
                 const justAdded = lastAddedProductId === product.id;
 
                 return (
-                <article className={`product ${justAdded ? "product-added" : ""}`} key={product.id}>
-                  {product.imageUrl && (
-                    <div className="product-image">
-                      <img src={product.imageUrl} alt={product.name} />
-                    </div>
-                  )}
-                  <span className="pill">{product.tag}</span>
-                  <h3>{product.name}</h3>
-                  <p className="meta">{product.description}</p>
-                  <span className={`stock-pill ${product.stock <= 0 ? "stock-empty" : ""}`}>
-                    {getStockLabel(product)}
-                  </span>
-                  <p className="price">${product.priceUsd.toFixed(2)} USD</p>
-                  <button
-                    className="button button-primary"
-                    type="button"
-                    disabled={product.stock <= 0}
-                    onClick={() => (productInCart ? viewCart() : addToCart(product))}
+                  <article
+                    className={`product glass ${justAdded ? "product-added" : ""}`}
+                    key={product.id}
                   >
-                    {product.stock <= 0 ? "Sin stock" : productInCart ? "Ver en carrito" : "Agregar al carrito"}
-                  </button>
-                </article>
+                    <Link to={`/producto/${product.id}`} className="product-image">
+                      {product.imageUrl ? (
+                        <img src={product.imageUrl} alt={product.name} />
+                      ) : (
+                        <span className="product-image-fallback" aria-hidden="true">
+                          🌿
+                        </span>
+                      )}
+                    </Link>
+                    <div className="product-pills">
+                      {product.tag ? <span className="pill">{product.tag}</span> : null}
+                      <span className={`stock-pill ${product.stock <= 0 ? "stock-empty" : ""}`}>
+                        {getStockLabel(product)}
+                      </span>
+                    </div>
+                    <h3>
+                      <Link to={`/producto/${product.id}`}>{product.name}</Link>
+                    </h3>
+                    <p className="meta">{product.description}</p>
+                    <p className="price">${product.priceUsd.toFixed(2)} USD</p>
+                    <div className="product-actions">
+                      <button
+                        className="button button-primary"
+                        type="button"
+                        disabled={product.stock <= 0}
+                        onClick={() => (productInCart ? viewCart() : addToCart(product))}
+                      >
+                        {product.stock <= 0
+                          ? "Sin stock"
+                          : productInCart
+                            ? "Ver en carrito"
+                            : "Agregar al carrito"}
+                      </button>
+                      <Link className="button button-outline" to={`/producto/${product.id}`}>
+                        Ver detalles
+                      </Link>
+                    </div>
+                  </article>
                 );
               })}
             </div>
           )}
         </div>
       </section>
+
+      <Testimonials />
+      <FaqSection />
+      <FinalCta />
     </main>
   );
 }
@@ -876,15 +889,21 @@ function AppWithClerk() {
     user?.primaryEmailAddress?.emailAddress ?? null,
   );
 
+  const authAction = user ? (
+    <Link className="button button-outline" to="/dashboard">
+      Mi cuenta
+    </Link>
+  ) : (
+    <Link to="/sign-up" className="button button-outline">
+      Crear cuenta
+    </Link>
+  );
+
   return (
     <RootLayout cart={cart}>
       <Routes>
-        <Route
-          path="/"
-          element={
-            <HomePage {...cart} />
-          }
-        />
+        <Route path="/" element={<HomePage {...cart} authAction={authAction} />} />
+        <Route path="/producto/:id" element={<ProductDetailPage {...cart} />} />
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/sign-up" element={<SignUpPage />} />
         <Route
@@ -898,6 +917,9 @@ function AppWithClerk() {
         <Route path="/admin" element={<AdminBridgePage />} />
         <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
         <Route path="/checkout/cancelled" element={<CheckoutCancelledPage />} />
+        <Route path="/terminos" element={<TerminosPage />} />
+        <Route path="/privacidad" element={<PrivacidadPage />} />
+        <Route path="/devoluciones" element={<DevolucionesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </RootLayout>
@@ -908,20 +930,6 @@ function AppWithoutClerk() {
   const adminAppUrl = getAdminAppUrl();
   const { themeMode, toggleThemeMode } = useThemeMode();
   const cart = useStorefrontCart(null, null);
-  const {
-    products,
-    loadingProducts,
-    cartLines,
-    cartCount,
-    cartTotal,
-    checkoutError,
-    checkingOut,
-    lastAddedProductId,
-    addToCart,
-    viewCart,
-    updateCartQuantity,
-    checkoutCart,
-  } = cart;
 
   return (
     <>
@@ -961,124 +969,17 @@ function AppWithoutClerk() {
         <Route
           path="/"
           element={
-            <main>
-              <section className="hero">
-                <div className="container hero-grid">
-                  <div>
-                    <span className="hero-badge">Sostenible sin salir de casa</span>
-                    <h1>Tu mini huerto en casa, aunque vivas en un apartamento.</h1>
-                    <p>
-                      Kits pequeños de cultivo con semillas, sustrato y guía práctica para cosechar
-                      en espacios reducidos o zonas con poco acceso a tierra fértil.
-                    </p>
-                  </div>
-                  <div className="hero-card">
-                    <h3>¿Qué incluye cada kit?</h3>
-                    <ul>
-                      <li>Semillas para microcultivos de ciclo corto.</li>
-                      <li>Macetas compactas y sustrato ligero.</li>
-                      <li>Guía de riego y luz para espacios pequeños.</li>
-                      <li>Soporte básico para primeras 2 semanas.</li>
-                    </ul>
-                  </div>
-                </div>
-              </section>
-
-              <section id="catalogo" className="products">
-                <div className="container">
-                  <div className="catalog-header">
-                    <h2 className="section-title">Kits para arrancar en una tarde</h2>
-                    <a className="cart-chip" href="#carrito">
-                      Carrito ({cartCount})
-                    </a>
-                  </div>
-                  <section className="cart-panel" id="carrito" aria-label="Carrito de compra">
-                    <div>
-                      <h3>Carrito</h3>
-                      <p className="meta">
-                        {cartCount === 0
-                          ? "Agrega kits del catálogo para preparar tu compra."
-                          : `${cartCount} producto${cartCount === 1 ? "" : "s"} en el carrito.`}
-                      </p>
-                    </div>
-                    {cartLines.length > 0 ? (
-                      <div className="cart-lines">
-                        {cartLines.map(({ product, quantity }) => (
-                          <div className="cart-line" key={product.id}>
-                            <div>
-                              <strong>{product.name}</strong>
-                              <span>{formatMoney(product.priceUsd * quantity)}</span>
-                            </div>
-                            <div className="quantity-control">
-                              <button type="button" onClick={() => updateCartQuantity(product.id, quantity - 1)}>
-                                −
-                              </button>
-                              <span>{quantity}</span>
-                              <button
-                                type="button"
-                                disabled={quantity >= product.stock}
-                                onClick={() => updateCartQuantity(product.id, quantity + 1)}
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="cart-summary">
-                      <strong>Total: {formatMoney(cartTotal)}</strong>
-                      <button
-                        className="button button-primary"
-                        type="button"
-                        disabled={cartCount === 0 || checkingOut}
-                        onClick={() => void checkoutCart()}
-                      >
-                        {checkingOut ? "Redirigiendo..." : "Comprar carrito"}
-                      </button>
-                    </div>
-                    {checkoutError ? <p className="status-error">{checkoutError}</p> : null}
-                  </section>
-                  {loadingProducts ? (
-                    <p className="loading-text">Cargando productos...</p>
-                  ) : (
-                    <div className="grid">
-                      {products.map((product) => {
-                        const productInCart = cartLines.some((line) => line.product.id === product.id);
-                        const justAdded = lastAddedProductId === product.id;
-
-                        return (
-                        <article className={`product ${justAdded ? "product-added" : ""}`} key={product.id}>
-                          {product.imageUrl && (
-                            <div className="product-image">
-                              <img src={product.imageUrl} alt={product.name} />
-                            </div>
-                          )}
-                          <span className="pill">{product.tag}</span>
-                          <h3>{product.name}</h3>
-                          <p className="meta">{product.description}</p>
-                          <span className={`stock-pill ${product.stock <= 0 ? "stock-empty" : ""}`}>
-                            {getStockLabel(product)}
-                          </span>
-                          <p className="price">${product.priceUsd.toFixed(2)} USD</p>
-                          <button
-                            className="button button-primary"
-                            type="button"
-                            disabled={product.stock <= 0}
-                            onClick={() => (productInCart ? viewCart() : addToCart(product))}
-                          >
-                            {product.stock <= 0 ? "Sin stock" : productInCart ? "Ver en carrito" : "Agregar al carrito"}
-                          </button>
-                        </article>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </section>
-            </main>
+            <HomePage
+              {...cart}
+              authAction={
+                <button className="button button-outline" type="button" disabled>
+                  Habilita Clerk para registro
+                </button>
+              }
+            />
           }
         />
+        <Route path="/producto/:id" element={<ProductDetailPage {...cart} />} />
         <Route
           path="/sign-in"
           element={
@@ -1128,13 +1029,12 @@ function AppWithoutClerk() {
         />
         <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
         <Route path="/checkout/cancelled" element={<CheckoutCancelledPage />} />
+        <Route path="/terminos" element={<TerminosPage />} />
+        <Route path="/privacidad" element={<PrivacidadPage />} />
+        <Route path="/devoluciones" element={<DevolucionesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      <footer className="footer">
-        <div className="container">
-          <p>UrbanSprout · by Los Extraditables 😈 NJA V.1.0.0.0</p>
-        </div>
-      </footer>
+      <SiteFooter />
     </>
   );
 }

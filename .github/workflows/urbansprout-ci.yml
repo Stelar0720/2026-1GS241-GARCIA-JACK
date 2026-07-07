@@ -1,0 +1,64 @@
+name: UrbanSprout CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "parciales/Parcial2/**"
+      - ".github/workflows/urbansprout-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "parciales/Parcial2/**"
+      - ".github/workflows/urbansprout-ci.yml"
+
+defaults:
+  run:
+    working-directory: parciales/Parcial2
+
+jobs:
+  lint-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install storefront dependencies
+        run: npm ci
+
+      - name: Install backoffice dependencies
+        run: npm --prefix admin-backoffice ci
+
+      - name: Install bun-api dependencies
+        run: bun install
+        working-directory: parciales/Parcial2/bun-api
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Prepare local env file for bun-api
+        run: touch bun-api/.env
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests (storefront + backoffice + API)
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: parciales/Parcial2/playwright-report/
+          retention-days: 7

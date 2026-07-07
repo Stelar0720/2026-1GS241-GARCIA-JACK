@@ -56,6 +56,18 @@ db.exec(`
   );
 `);
 
+// Log de auditoría append-only para operaciones sensibles (HU-029).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT ''
+  );
+`);
+
 const inventoryCount = db.query("SELECT COUNT(*) AS count FROM inventory").get() as
   | { count: number }
   | undefined;
@@ -500,4 +512,211 @@ export function updateProduct(productId: string, params: ProductInput) {
 export function deleteProduct(productId: string) {
   const result = db.query("DELETE FROM products WHERE id = ?").run(productId);
   return result.changes > 0;
+}
+
+// ============================================================
+// Audit log (HU-029) — append-only
+// ============================================================
+
+export type AuditLogEntry = {
+  id: string;
+  timestamp: string;
+  actor: string;
+  action: string;
+  resource: string;
+  details: string;
+};
+
+export function recordAuditLog(params: {
+  actor: string;
+  action: string;
+  resource: string;
+  details?: string;
+}) {
+  db.query(
+    `INSERT INTO audit_logs (id, timestamp, actor, action, resource, details)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    randomUUID(),
+    new Date().toISOString(),
+    params.actor,
+    params.action,
+    params.resource,
+    params.details ?? "",
+  );
+}
+
+export function queryAuditLogs(filters: {
+  actor?: string;
+  action?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+}): AuditLogEntry[] {
+  const clauses: string[] = [];
+  const values: (string | number)[] = [];
+
+  if (filters.actor) {
+    clauses.push("actor = ?");
+    values.push(filters.actor);
+  }
+  if (filters.action) {
+    clauses.push("action = ?");
+    values.push(filters.action);
+  }
+  if (filters.from) {
+    clauses.push("timestamp >= ?");
+    values.push(filters.from);
+  }
+  if (filters.to) {
+    clauses.push("timestamp <= ?");
+    values.push(filters.to);
+  }
+
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+  const limit = Math.max(1, Math.min(Math.floor(filters.limit ?? 100), 500));
+
+  return db
+    .query(
+      `SELECT id, timestamp, actor, action, resource, details
+       FROM audit_logs
+       ${where}
+       ORDER BY timestamp DESC
+       LIMIT ?`,
+    )
+    .all(...values, limit) as AuditLogEntry[];
+}
+
+// ============================================================
+// Reportes / export (HU-064, HU-067)
+// ============================================================
+
+export type SalesReport = {
+  from: string | null;
+  to: string | null;
+  totalOrders: number;
+  paidOrders: number;
+  revenueTotalUsd: number;
+  averageOrderValueUsd: number;
+  topProduct: { productId: string; productName: string | null; unitsSold: number } | null;
+  byProduct: {
+    productId: string;
+    productName: string | null;
+    unitsSold: number;
+    revenueUsd: number;
+  }[];
+};
+
+export function generateSalesReport(filters: { from?: string; to?: string }): SalesReport {
+  const clauses: string[] = ["orders.status = 'paid'"];
+  const values: string[] = [];
+
+  if (filters.from) {
+    clauses.push("orders.created_at >= ?");
+    values.push(filters.from);
+  }
+  if (filters.to) {
+    clauses.push("orders.created_at <= ?");
+    values.push(filters.to);
+  }
+
+  const where = `WHERE ${clauses.join(" AND ")}`;
+
+  const totals = db
+    .query(
+      `SELECT
+        COUNT(*) AS paidOrders,
+        COALESCE(SUM(orders.amount_usd), 0) AS revenueTotalUsd
+      FROM orders
+      ${where}`,
+    )
+    .get(...values) as { paidOrders: number; revenueTotalUsd: number };
+
+  const totalOrdersRow = db
+    .query(
+      `SELECT COUNT(*) AS totalOrders FROM orders ${
+        filters.from || filters.to
+          ? `WHERE ${[
+              filters.from ? "created_at >= ?" : null,
+              filters.to ? "created_at <= ?" : null,
+            ]
+              .filter(Boolean)
+              .join(" AND ")}`
+          : ""
+      }`,
+    )
+    .get(...values) as { totalOrders: number };
+
+  const byProduct = db
+    .query(
+      `SELECT
+        orders.product_id AS productId,
+        products.name AS productName,
+        COALESCE(SUM(orders.quantity), 0) AS unitsSold,
+        COALESCE(SUM(orders.amount_usd), 0) AS revenueUsd
+      FROM orders
+      LEFT JOIN products ON products.id = orders.product_id
+      ${where}
+      GROUP BY orders.product_id
+      ORDER BY unitsSold DESC`,
+    )
+    .all(...values) as {
+    productId: string;
+    productName: string | null;
+    unitsSold: number;
+    revenueUsd: number;
+  }[];
+
+  const topProduct = byProduct.length > 0
+    ? {
+        productId: byProduct[0].productId,
+        productName: byProduct[0].productName,
+        unitsSold: byProduct[0].unitsSold,
+      }
+    : null;
+
+  return {
+    from: filters.from ?? null,
+    to: filters.to ?? null,
+    totalOrders: totalOrdersRow.totalOrders,
+    paidOrders: totals.paidOrders,
+    revenueTotalUsd: Number(totals.revenueTotalUsd.toFixed(2)),
+    averageOrderValueUsd:
+      totals.paidOrders > 0 ? Number((totals.revenueTotalUsd / totals.paidOrders).toFixed(2)) : 0,
+    topProduct,
+    byProduct,
+  };
+}
+
+export function getOrderById(orderId: string) {
+  return db
+    .query(
+      `SELECT
+        id,
+        checkout_session_id AS checkoutSessionId,
+        product_id AS productId,
+        buyer_id AS buyerId,
+        buyer_email AS buyerEmail,
+        status,
+        quantity,
+        amount_usd AS amountUsd,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM orders
+      WHERE id = ?`,
+    )
+    .get(orderId) as
+    | {
+        id: string;
+        checkoutSessionId: string;
+        productId: string;
+        buyerId: string;
+        buyerEmail: string | null;
+        status: OrderStatus;
+        quantity: number;
+        amountUsd: number;
+        createdAt: string;
+        updatedAt: string;
+      }
+    | null;
 }

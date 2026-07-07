@@ -1,5 +1,5 @@
 app = "urbansprout-web"
-primary_region = "mia"
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile.storefront"
