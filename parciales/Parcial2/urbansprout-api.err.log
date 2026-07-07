@@ -1,0 +1,452 @@
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[Bun.serve]: request timed out after 10 seconds. Pass `idleTimeout` to configure.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+408 |                     if (RequestSender._shouldRetry(null, requestRetries, maxRetries, error)) {
+409 |                         return retryRequest(makeRequest, apiVersion, headers, requestRetries, null);
+410 |                     }
+411 |                     else {
+412 |                         const isTimeoutError = error.code && error.code === HttpClient.TIMEOUT_ERROR_CODE;
+413 |                         return callback(new StripeConnectionError({
+                                                  ^
+error: An error occurred with our connection to Stripe. Request was retried 2 times.
+       type: "StripeConnectionError",
+        raw: {
+  message: "An error occurred with our connection to Stripe. Request was retried 2 times.",
+  detail: error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+,
+},
+    rawType: undefined,
+       code: undefined,
+    doc_url: undefined,
+      param: undefined,
+    headers: undefined,
+  requestId: undefined,
+ statusCode: undefined,
+ userMessage: undefined,
+     charge: undefined,
+ decline_code: undefined,
+ payment_intent: undefined,
+ payment_method: undefined,
+ payment_method_type: undefined,
+ setup_intent: undefined,
+     source: undefined,
+
+      at C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\RequestSender.js:413:45
+      at _makeRequest (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\StripeResource.js:95:1)
+      at syncBuyerOrdersWithStripe (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:424:25)
+      at fetch (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:485:13)
+
+error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+GET - http://localhost:4000/customers/user_3CxXh0GyM5xekCnhxWO47tr4gWj/orders?email=jack.eurus.utp%40gmail.com failed
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+408 |                     if (RequestSender._shouldRetry(null, requestRetries, maxRetries, error)) {
+409 |                         return retryRequest(makeRequest, apiVersion, headers, requestRetries, null);
+410 |                     }
+411 |                     else {
+412 |                         const isTimeoutError = error.code && error.code === HttpClient.TIMEOUT_ERROR_CODE;
+413 |                         return callback(new StripeConnectionError({
+                                                  ^
+error: An error occurred with our connection to Stripe. Request was retried 2 times.
+       type: "StripeConnectionError",
+        raw: {
+  message: "An error occurred with our connection to Stripe. Request was retried 2 times.",
+  detail: error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+,
+},
+    rawType: undefined,
+       code: undefined,
+    doc_url: undefined,
+      param: undefined,
+    headers: undefined,
+  requestId: undefined,
+ statusCode: undefined,
+ userMessage: undefined,
+     charge: undefined,
+ decline_code: undefined,
+ payment_intent: undefined,
+ payment_method: undefined,
+ payment_method_type: undefined,
+ setup_intent: undefined,
+     source: undefined,
+
+      at C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\RequestSender.js:413:45
+      at _makeRequest (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\StripeResource.js:95:1)
+      at syncBuyerOrdersWithStripe (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:424:25)
+      at fetch (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:485:13)
+
+error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+GET - http://localhost:4000/customers/user_3CxXh0GyM5xekCnhxWO47tr4gWj/orders?email=jack.eurus.utp%40gmail.com failed
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+408 |                     if (RequestSender._shouldRetry(null, requestRetries, maxRetries, error)) {
+409 |                         return retryRequest(makeRequest, apiVersion, headers, requestRetries, null);
+410 |                     }
+411 |                     else {
+412 |                         const isTimeoutError = error.code && error.code === HttpClient.TIMEOUT_ERROR_CODE;
+413 |                         return callback(new StripeConnectionError({
+                                                  ^
+error: An error occurred with our connection to Stripe. Request was retried 2 times.
+       type: "StripeConnectionError",
+        raw: {
+  message: "An error occurred with our connection to Stripe. Request was retried 2 times.",
+  detail: error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+,
+},
+    rawType: undefined,
+       code: undefined,
+    doc_url: undefined,
+      param: undefined,
+    headers: undefined,
+  requestId: undefined,
+ statusCode: undefined,
+ userMessage: undefined,
+     charge: undefined,
+ decline_code: undefined,
+ payment_intent: undefined,
+ payment_method: undefined,
+ payment_method_type: undefined,
+ setup_intent: undefined,
+     source: undefined,
+
+      at C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\RequestSender.js:413:45
+      at _makeRequest (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\StripeResource.js:95:1)
+      at syncBuyerOrdersWithStripe (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:424:25)
+      at fetch (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:485:13)
+
+error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+GET - http://localhost:4000/customers/user_3CxXh0GyM5xekCnhxWO47tr4gWj/orders?email=jack.eurus.utp%40gmail.com failed
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+408 |                     if (RequestSender._shouldRetry(null, requestRetries, maxRetries, error)) {
+409 |                         return retryRequest(makeRequest, apiVersion, headers, requestRetries, null);
+410 |                     }
+411 |                     else {
+412 |                         const isTimeoutError = error.code && error.code === HttpClient.TIMEOUT_ERROR_CODE;
+413 |                         return callback(new StripeConnectionError({
+                                                  ^
+error: An error occurred with our connection to Stripe. Request was retried 2 times.
+       type: "StripeConnectionError",
+        raw: {
+  message: "An error occurred with our connection to Stripe. Request was retried 2 times.",
+  detail: error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+,
+},
+    rawType: undefined,
+       code: undefined,
+    doc_url: undefined,
+      param: undefined,
+    headers: undefined,
+  requestId: undefined,
+ statusCode: undefined,
+ userMessage: undefined,
+     charge: undefined,
+ decline_code: undefined,
+ payment_intent: undefined,
+ payment_method: undefined,
+ payment_method_type: undefined,
+ setup_intent: undefined,
+     source: undefined,
+
+      at C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\RequestSender.js:413:45
+      at _makeRequest (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\StripeResource.js:95:1)
+      at syncBuyerOrdersWithStripe (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:424:25)
+      at fetch (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:485:13)
+
+error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+GET - http://localhost:4000/customers/user_3CxXh0GyM5xekCnhxWO47tr4gWj/orders?email=jack.eurus.utp%40gmail.com failed
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+408 |                     if (RequestSender._shouldRetry(null, requestRetries, maxRetries, error)) {
+409 |                         return retryRequest(makeRequest, apiVersion, headers, requestRetries, null);
+410 |                     }
+411 |                     else {
+412 |                         const isTimeoutError = error.code && error.code === HttpClient.TIMEOUT_ERROR_CODE;
+413 |                         return callback(new StripeConnectionError({
+                                                  ^
+error: An error occurred with our connection to Stripe. Request was retried 2 times.
+       type: "StripeConnectionError",
+        raw: {
+  message: "An error occurred with our connection to Stripe. Request was retried 2 times.",
+  detail: error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+,
+},
+    rawType: undefined,
+       code: undefined,
+    doc_url: undefined,
+      param: undefined,
+    headers: undefined,
+  requestId: undefined,
+ statusCode: undefined,
+ userMessage: undefined,
+     charge: undefined,
+ decline_code: undefined,
+ payment_intent: undefined,
+ payment_method: undefined,
+ payment_method_type: undefined,
+ setup_intent: undefined,
+     source: undefined,
+
+      at C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\RequestSender.js:413:45
+      at _makeRequest (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\StripeResource.js:95:1)
+      at syncBuyerOrdersWithStripe (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:424:25)
+      at fetch (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:485:13)
+
+error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+GET - http://localhost:4000/customers/user_3CxXh0GyM5xekCnhxWO47tr4gWj/orders?email=jack.eurus.utp%40gmail.com failed
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+408 |                     if (RequestSender._shouldRetry(null, requestRetries, maxRetries, error)) {
+409 |                         return retryRequest(makeRequest, apiVersion, headers, requestRetries, null);
+410 |                     }
+411 |                     else {
+412 |                         const isTimeoutError = error.code && error.code === HttpClient.TIMEOUT_ERROR_CODE;
+413 |                         return callback(new StripeConnectionError({
+                                                  ^
+error: An error occurred with our connection to Stripe. Request was retried 2 times.
+       type: "StripeConnectionError",
+        raw: {
+  message: "An error occurred with our connection to Stripe. Request was retried 2 times.",
+  detail: error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+,
+},
+    rawType: undefined,
+       code: undefined,
+    doc_url: undefined,
+      param: undefined,
+    headers: undefined,
+  requestId: undefined,
+ statusCode: undefined,
+ userMessage: undefined,
+     charge: undefined,
+ decline_code: undefined,
+ payment_intent: undefined,
+ payment_method: undefined,
+ payment_method_type: undefined,
+ setup_intent: undefined,
+     source: undefined,
+
+      at C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\RequestSender.js:413:45
+      at _makeRequest (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\StripeResource.js:95:1)
+      at syncBuyerOrdersWithStripe (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:424:25)
+      at fetch (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:485:13)
+
+error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+GET - http://localhost:4000/customers/user_3CxXh0GyM5xekCnhxWO47tr4gWj/orders?email=jack.eurus.utp%40gmail.com failed
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
+408 |                     if (RequestSender._shouldRetry(null, requestRetries, maxRetries, error)) {
+409 |                         return retryRequest(makeRequest, apiVersion, headers, requestRetries, null);
+410 |                     }
+411 |                     else {
+412 |                         const isTimeoutError = error.code && error.code === HttpClient.TIMEOUT_ERROR_CODE;
+413 |                         return callback(new StripeConnectionError({
+                                                  ^
+error: An error occurred with our connection to Stripe. Request was retried 2 times.
+       type: "StripeConnectionError",
+        raw: {
+  message: "An error occurred with our connection to Stripe. Request was retried 2 times.",
+  detail: error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+,
+},
+    rawType: undefined,
+       code: undefined,
+    doc_url: undefined,
+      param: undefined,
+    headers: undefined,
+  requestId: undefined,
+ statusCode: undefined,
+ userMessage: undefined,
+     charge: undefined,
+ decline_code: undefined,
+ payment_intent: undefined,
+ payment_method: undefined,
+ payment_method_type: undefined,
+ setup_intent: undefined,
+     source: undefined,
+
+      at C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\RequestSender.js:413:45
+      at _makeRequest (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\node_modules\stripe\esm\StripeResource.js:95:1)
+      at syncBuyerOrdersWithStripe (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:424:25)
+      at fetch (C:\Users\stela\Documents\I SEMESTRE 2026\DSIX\parciales\Parcial2\bun-api\src\index.ts:485:13)
+
+error: Unable to connect. Is the computer able to access the url?
+  path: "https://api.stripe.com/v1/checkout/sessions?limit=100",
+ errno: 0,
+  code: "ConnectionRefused"
+
+GET - http://localhost:4000/customers/user_3CxXh0GyM5xekCnhxWO47tr4gWj/orders?email=jack.eurus.utp%40gmail.com failed
+[orders-sync] checkout cs_test_a1zlRjYXyN7VSqRBaDpGzWABb0cNa7sPylZ74rYIRWWLYPmjZUXtUGJD8g: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1lozNYUcLqLqleRVm7jUm9vVQRCovP3MHI7XbMLVwC24UeUdnpFqXGerr: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1z113w3Tj6zUXX4P0JeoMbYK3wpL5B7i69fNg7YNszUM62q454q4Mzjc7: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1vDhceg9aHoBEXVsMw2ib5LmRUrGNVLdGAZS4QwQQyYHctG2stVFuyZuz: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a19ijQh6xhIOveE6xEc4ZaX2aKnjUWu9aIHOVxVCV24GKg2nEsgNZnEMRB: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1fCEDkaJMZOx61Va2oGT0xe2vO2ia8l1NkVTscGkz3H3dg5oyTTS9duqg: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1mvIr8rpbdTIdCsXN23Wtn30PAuK80ajplfnPBXi4F3xEz4hdm58uu8gX: An error occurred with our connection to Stripe. Request was retried 2 times.
+[orders-sync] checkout cs_test_a1JSBP2zYf80ShFSgQbZXGBPwIV3SSiH6nOAD4Vb9WL4ZLlDwsBKzXFoeK: An error occurred with our connection to Stripe. Request was retried 2 times.
