@@ -1,0 +1,10 @@
+node_modules
+package.json
+bun.lock
+tsconfig.json
+.env
+.env.*
+!.env.example
+data
+public/uploads
+*.log

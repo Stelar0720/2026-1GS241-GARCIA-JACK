@@ -1,722 +1,177 @@
-import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
+import { MongoClient, MongoServerError, type ClientSession, type Collection, type Db, type Filter } from "mongodb";
 
-const dbPath = process.env.BUN_DB_PATH?.trim() || "./data/urbansprout.sqlite";
-const dbDir = dirname(dbPath);
-if (dbDir !== "." && !existsSync(dbDir)) {
-  mkdirSync(dbDir, { recursive: true });
-}
+const mongoUri = process.env.MONGODB_URI?.trim() || "mongodb://127.0.0.1:27017";
+const mongoDatabase = process.env.MONGODB_DATABASE?.trim() || "urbansprout";
 
-export const db = new Database(dbPath, { create: true });
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS orders (
-    id TEXT PRIMARY KEY,
-    checkout_session_id TEXT UNIQUE NOT NULL,
-    product_id TEXT NOT NULL,
-    buyer_id TEXT NOT NULL,
-    buyer_email TEXT,
-    status TEXT NOT NULL,
-    amount_usd REAL NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
-`);
-
-const orderColumns = db.query("PRAGMA table_info(orders)").all() as { name: string }[];
-if (!orderColumns.some((column) => column.name === "buyer_email")) {
-  db.exec("ALTER TABLE orders ADD COLUMN buyer_email TEXT");
-}
-if (!orderColumns.some((column) => column.name === "quantity")) {
-  db.exec("ALTER TABLE orders ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1");
-}
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS inventory (
-    sku TEXT PRIMARY KEY,
-    stock INTEGER NOT NULL,
-    minimum_stock INTEGER NOT NULL,
-    updated_at TEXT NOT NULL
-  );
-`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS products (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL,
-    price_usd REAL NOT NULL,
-    tag TEXT NOT NULL DEFAULT '',
-    image_url TEXT NOT NULL DEFAULT '',
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
-`);
-
-// Log de auditoría append-only para operaciones sensibles (HU-029).
-db.exec(`
-  CREATE TABLE IF NOT EXISTS audit_logs (
-    id TEXT PRIMARY KEY,
-    timestamp TEXT NOT NULL,
-    actor TEXT NOT NULL,
-    action TEXT NOT NULL,
-    resource TEXT NOT NULL,
-    details TEXT NOT NULL DEFAULT ''
-  );
-`);
-
-const inventoryCount = db.query("SELECT COUNT(*) AS count FROM inventory").get() as
-  | { count: number }
-  | undefined;
-
-if (!inventoryCount || inventoryCount.count === 0) {
-  const now = new Date().toISOString();
-  const insertInventory = db.query(
-    "INSERT INTO inventory (sku, stock, minimum_stock, updated_at) VALUES (?, ?, ?, ?)",
-  );
-  insertInventory.run("kit-balcon-basico", 18, 5, now);
-  insertInventory.run("kit-microverde-rapido", 24, 8, now);
-  insertInventory.run("kit-aromaticas-compacto", 15, 5, now);
-}
-
-const productCount = db.query("SELECT COUNT(*) AS count FROM products").get() as
-  | { count: number }
-  | undefined;
-
-if (!productCount || productCount.count === 0) {
-  const now = new Date().toISOString();
-  const insertProduct = db.query(
-    `INSERT INTO products (
-      id, name, description, price_usd, tag, image_url, active, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-
-  insertProduct.run(
-    "kit-balcon-basico",
-    "Kit balcón básico",
-    "Lechuga, cilantro y cebollín para espacios con 2-3 horas de luz.",
-    24.9,
-    "Inicio",
-    "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop",
-    1,
-    now,
-    now,
-  );
-  insertProduct.run(
-    "kit-microverde-rapido",
-    "Kit microverde rápido",
-    "Microbrotes listos en 7-10 días, ideal para cocinas en apartamentos.",
-    29.9,
-    "Más vendido",
-    "https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?w=400&h=300&fit=crop",
-    1,
-    now,
-    now,
-  );
-  insertProduct.run(
-    "kit-aromaticas-compacto",
-    "Kit aromáticas compacto",
-    "Albahaca, menta y perejil con guía de poda y riego urbano.",
-    34.9,
-    "Premium",
-    "https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?w=400&h=300&fit=crop",
-    1,
-    now,
-    now,
-  );
-}
+const client = new MongoClient(mongoUri);
+export let db: Db;
 
 export type OrderStatus = "pending" | "paid" | "cancelled";
-
-export type PendingOrder = {
-  checkoutSessionId: string;
-  productId: string;
-  buyerId: string;
-  amountUsd: number;
-  quantity: number;
-};
-
-export type ProductInput = {
-  name: string;
-  description: string;
-  priceUsd: number;
-  tag: string;
-  imageUrl: string;
-};
-
-export type ProductRecord = ProductInput & {
-  id: string;
-  active: number;
-  stock: number;
-  minimumStock: number;
-  inventoryUpdatedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-function createInventoryIfMissing(sku: string) {
-  const now = new Date().toISOString();
-  db.query(
-    `INSERT OR IGNORE INTO inventory (sku, stock, minimum_stock, updated_at)
-     VALUES (?, 0, 0, ?)`,
-  ).run(sku, now);
-}
-
-export function listOrders() {
-  return db
-    .query(
-      `SELECT
-        id,
-        checkout_session_id AS checkoutSessionId,
-        product_id AS productId,
-        buyer_id AS buyerId,
-        buyer_email AS buyerEmail,
-        status,
-        quantity,
-        amount_usd AS amountUsd,
-        created_at AS createdAt,
-        updated_at AS updatedAt
-      FROM orders
-      ORDER BY created_at DESC`,
-    )
-    .all();
-}
-
-export function listOrdersByBuyer(buyerId: string, buyerEmail?: string | null) {
-  const normalizedEmail = buyerEmail?.trim().toLowerCase() || null;
-  const whereClause = normalizedEmail
-    ? "WHERE orders.buyer_id = ? OR LOWER(orders.buyer_email) = ?"
-    : "WHERE orders.buyer_id = ?";
-  const params = normalizedEmail ? [buyerId, normalizedEmail] : [buyerId];
-
-  return db
-    .query(
-      `SELECT
-        orders.id,
-        orders.checkout_session_id AS checkoutSessionId,
-        orders.product_id AS productId,
-        orders.buyer_id AS buyerId,
-        orders.buyer_email AS buyerEmail,
-        orders.status,
-        orders.quantity,
-        orders.amount_usd AS amountUsd,
-        orders.created_at AS createdAt,
-        orders.updated_at AS updatedAt,
-        products.name AS productName,
-        products.description AS productDescription,
-        products.image_url AS productImageUrl
-      FROM orders
-      LEFT JOIN products ON products.id = orders.product_id
-      ${whereClause}
-      ORDER BY orders.created_at DESC`,
-    )
-    .all(...params);
-}
-
-export function listPendingOrders(): PendingOrder[] {
-  return db
-    .query(
-      `SELECT
-        checkout_session_id AS checkoutSessionId,
-        product_id AS productId,
-        buyer_id AS buyerId,
-        amount_usd AS amountUsd,
-        quantity
-      FROM orders
-      WHERE status = 'pending'`,
-    )
-    .all() as PendingOrder[];
-}
-
-export function updateOrderStatus(orderId: string, status: OrderStatus) {
-  const previous = db
-    .query("SELECT product_id AS productId, status, quantity FROM orders WHERE id = ?")
-    .get(orderId) as { productId: string; status: OrderStatus; quantity: number } | null;
-  const now = new Date().toISOString();
-  db.query("UPDATE orders SET status = ?, updated_at = ? WHERE id = ?").run(status, now, orderId);
-
-  if (previous?.productId && previous.status !== status) {
-    adjustInventoryForStatusChange(previous.productId, previous.status, status, previous.quantity);
-  }
-}
-
-function adjustInventoryForStatusChange(
-  productId: string,
-  previousStatus: OrderStatus | null,
-  nextStatus: OrderStatus,
-  quantity: number,
-) {
-  createInventoryIfMissing(productId);
-
-  if (previousStatus !== "paid" && nextStatus === "paid") {
-    decreaseInventory(productId, quantity);
-  }
-
-  if (previousStatus === "paid" && nextStatus !== "paid") {
-    increaseInventory(productId, quantity);
-  }
-}
-
-export function getInventoryStock(sku: string) {
-  createInventoryIfMissing(sku);
-  const row = db.query("SELECT stock FROM inventory WHERE sku = ?").get(sku) as
-    | { stock: number }
-    | null;
-
-  return row?.stock ?? 0;
-}
-
-function decreaseInventory(sku: string, quantity: number) {
-  const now = new Date().toISOString();
-  db.query(
-    `UPDATE inventory
-     SET stock = MAX(stock - ?, 0), updated_at = ?
-     WHERE sku = ?`,
-  ).run(quantity, now, sku);
-}
-
-function increaseInventory(sku: string, quantity: number) {
-  const now = new Date().toISOString();
-  db.query(
-    `UPDATE inventory
-     SET stock = stock + ?, updated_at = ?
-     WHERE sku = ?`,
-  ).run(quantity, now, sku);
-}
-
-export function upsertOrderFromCheckout(params: {
-  checkoutSessionId: string;
-  productId: string;
-  buyerId: string;
-  buyerEmail?: string | null;
-  status: OrderStatus;
-  amountUsd: number;
-  quantity?: number;
-}) {
-  const existing = db
-    .query("SELECT id, status, quantity FROM orders WHERE checkout_session_id = ?")
-    .get(params.checkoutSessionId) as { id: string; status: OrderStatus; quantity: number } | null;
-  const now = new Date().toISOString();
-  const quantity = Math.max(1, Math.floor(params.quantity ?? 1));
-
-  if (existing?.id) {
-    db.query(
-      `UPDATE orders
-       SET status = ?, amount_usd = ?, quantity = ?, product_id = ?, buyer_id = ?, buyer_email = COALESCE(?, buyer_email), updated_at = ?
-       WHERE checkout_session_id = ?`,
-    ).run(
-      params.status,
-      params.amountUsd,
-      quantity,
-      params.productId,
-      params.buyerId,
-      params.buyerEmail?.trim().toLowerCase() || null,
-      now,
-      params.checkoutSessionId,
-    );
-    adjustInventoryForStatusChange(params.productId, existing.status, params.status, quantity);
-    return;
-  }
-
-  db.query(
-    `INSERT INTO orders (
-      id, checkout_session_id, product_id, buyer_id, buyer_email, status, quantity, amount_usd, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    randomUUID(),
-    params.checkoutSessionId,
-    params.productId,
-    params.buyerId,
-    params.buyerEmail?.trim().toLowerCase() || null,
-    params.status,
-    quantity,
-    params.amountUsd,
-    now,
-    now,
-  );
-  adjustInventoryForStatusChange(params.productId, null, params.status, quantity);
-}
-
-export function listInventory() {
-  return db
-    .query(
-      `SELECT
-        sku,
-        stock,
-        minimum_stock AS minimumStock,
-        updated_at AS updatedAt
-      FROM inventory
-      ORDER BY sku ASC`,
-    )
-    .all();
-}
-
-export function updateInventory(params: { sku: string; stock: number; minimumStock: number }) {
-  createInventoryIfMissing(params.sku);
-  const now = new Date().toISOString();
-  db.query("UPDATE inventory SET stock = ?, minimum_stock = ?, updated_at = ? WHERE sku = ?").run(
-    params.stock,
-    params.minimumStock,
-    now,
-    params.sku,
-  );
-}
-
-function mapProduct(row: unknown): ProductRecord | null {
-  if (!row) return null;
-  const product = row as {
-    id: string;
-    name: string;
-    description: string;
-    priceUsd: number;
-    tag: string;
-    imageUrl: string;
-    active: number;
-    stock: number | null;
-    minimumStock: number | null;
-    inventoryUpdatedAt: string | null;
-    createdAt: string;
-    updatedAt: string;
-  };
-
-  return product;
-}
-
-function makeProductId(name: string) {
-  const slug = name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-
-  return `${slug || "producto"}-${randomUUID().slice(0, 8)}`;
-}
-
-export function listProducts(options: { includeInactive?: boolean } = {}) {
-  const whereClause = options.includeInactive ? "" : "WHERE active = 1";
-  return db
-    .query(
-      `SELECT
-        products.id,
-        products.name,
-        products.description,
-        products.price_usd AS priceUsd,
-        products.tag,
-        products.image_url AS imageUrl,
-        products.active,
-        COALESCE(inventory.stock, 0) AS stock,
-        COALESCE(inventory.minimum_stock, 0) AS minimumStock,
-        inventory.updated_at AS inventoryUpdatedAt,
-        products.created_at AS createdAt,
-        products.updated_at AS updatedAt
-      FROM products
-      LEFT JOIN inventory ON inventory.sku = products.id
-      ${whereClause}
-      ORDER BY products.created_at DESC`,
-    )
-    .all() as ProductRecord[];
-}
-
-export function getActiveProduct(productId: string) {
-  return mapProduct(
-    db
-      .query(
-        `SELECT
-          products.id,
-          products.name,
-          products.description,
-          products.price_usd AS priceUsd,
-          products.tag,
-          products.image_url AS imageUrl,
-          products.active,
-          COALESCE(inventory.stock, 0) AS stock,
-          COALESCE(inventory.minimum_stock, 0) AS minimumStock,
-          inventory.updated_at AS inventoryUpdatedAt,
-          products.created_at AS createdAt,
-          products.updated_at AS updatedAt
-        FROM products
-        LEFT JOIN inventory ON inventory.sku = products.id
-        WHERE products.id = ? AND products.active = 1`,
-      )
-      .get(productId),
-  );
-}
-
-export function createProduct(params: ProductInput) {
-  const now = new Date().toISOString();
-  const id = makeProductId(params.name);
-  db.query(
-    `INSERT INTO products (
-      id, name, description, price_usd, tag, image_url, active, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-  ).run(
-    id,
-    params.name,
-    params.description,
-    params.priceUsd,
-    params.tag,
-    params.imageUrl,
-    now,
-    now,
-  );
-  createInventoryIfMissing(id);
-
-  return getActiveProduct(id);
-}
-
-export function updateProduct(productId: string, params: ProductInput) {
-  const now = new Date().toISOString();
-  db.query(
-    `UPDATE products
-     SET name = ?, description = ?, price_usd = ?, tag = ?, image_url = ?, updated_at = ?
-     WHERE id = ?`,
-  ).run(
-    params.name,
-    params.description,
-    params.priceUsd,
-    params.tag,
-    params.imageUrl,
-    now,
-    productId,
-  );
-
-  return mapProduct(
-    db
-      .query(
-        `SELECT
-          products.id,
-          products.name,
-          products.description,
-          products.price_usd AS priceUsd,
-          products.tag,
-          products.image_url AS imageUrl,
-          products.active,
-          COALESCE(inventory.stock, 0) AS stock,
-          COALESCE(inventory.minimum_stock, 0) AS minimumStock,
-          inventory.updated_at AS inventoryUpdatedAt,
-          products.created_at AS createdAt,
-          products.updated_at AS updatedAt
-        FROM products
-        LEFT JOIN inventory ON inventory.sku = products.id
-        WHERE products.id = ?`,
-      )
-      .get(productId),
-  );
-}
-
-export function deleteProduct(productId: string) {
-  const result = db.query("DELETE FROM products WHERE id = ?").run(productId);
-  return result.changes > 0;
-}
-
-// ============================================================
-// Audit log (HU-029) — append-only
-// ============================================================
-
-export type AuditLogEntry = {
-  id: string;
-  timestamp: string;
-  actor: string;
-  action: string;
-  resource: string;
-  details: string;
-};
-
-export function recordAuditLog(params: {
-  actor: string;
-  action: string;
-  resource: string;
-  details?: string;
-}) {
-  db.query(
-    `INSERT INTO audit_logs (id, timestamp, actor, action, resource, details)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(
-    randomUUID(),
-    new Date().toISOString(),
-    params.actor,
-    params.action,
-    params.resource,
-    params.details ?? "",
-  );
-}
-
-export function queryAuditLogs(filters: {
-  actor?: string;
-  action?: string;
-  from?: string;
-  to?: string;
-  limit?: number;
-}): AuditLogEntry[] {
-  const clauses: string[] = [];
-  const values: (string | number)[] = [];
-
-  if (filters.actor) {
-    clauses.push("actor = ?");
-    values.push(filters.actor);
-  }
-  if (filters.action) {
-    clauses.push("action = ?");
-    values.push(filters.action);
-  }
-  if (filters.from) {
-    clauses.push("timestamp >= ?");
-    values.push(filters.from);
-  }
-  if (filters.to) {
-    clauses.push("timestamp <= ?");
-    values.push(filters.to);
-  }
-
-  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-  const limit = Math.max(1, Math.min(Math.floor(filters.limit ?? 100), 500));
-
-  return db
-    .query(
-      `SELECT id, timestamp, actor, action, resource, details
-       FROM audit_logs
-       ${where}
-       ORDER BY timestamp DESC
-       LIMIT ?`,
-    )
-    .all(...values, limit) as AuditLogEntry[];
-}
-
-// ============================================================
-// Reportes / export (HU-064, HU-067)
-// ============================================================
-
+export type PendingOrder = { checkoutSessionId: string; productId: string; buyerId: string; amountUsd: number; quantity: number };
+export type ProductInput = { name: string; description: string; priceUsd: number; tag: string; imageUrl: string };
+export type ProductRecord = ProductInput & { id: string; active: number; stock: number; minimumStock: number; inventoryUpdatedAt: string | null; createdAt: string; updatedAt: string };
+export type AuditLogEntry = { id: string; timestamp: string; actor: string; action: string; resource: string; details: string };
 export type SalesReport = {
-  from: string | null;
-  to: string | null;
-  totalOrders: number;
-  paidOrders: number;
-  revenueTotalUsd: number;
-  averageOrderValueUsd: number;
+  from: string | null; to: string | null; totalOrders: number; paidOrders: number;
+  revenueTotalUsd: number; averageOrderValueUsd: number;
   topProduct: { productId: string; productName: string | null; unitsSold: number } | null;
-  byProduct: {
-    productId: string;
-    productName: string | null;
-    unitsSold: number;
-    revenueUsd: number;
-  }[];
+  byProduct: { productId: string; productName: string | null; unitsSold: number; revenueUsd: number }[];
 };
 
-export function generateSalesReport(filters: { from?: string; to?: string }): SalesReport {
-  const clauses: string[] = ["orders.status = 'paid'"];
-  const values: string[] = [];
+type OrderDocument = { id: string; checkoutSessionId: string; productId: string; buyerId: string; buyerEmail: string | null; status: OrderStatus; quantity: number; amountUsd: number; createdAt: string; updatedAt: string };
+type InventoryDocument = { sku: string; stock: number; minimumStock: number; updatedAt: string };
+type ProductDocument = ProductInput & { id: string; active: number; createdAt: string; updatedAt: string };
+type ProcessedStripeEvent = { eventId: string; type: string; processedAt: string };
 
-  if (filters.from) {
-    clauses.push("orders.created_at >= ?");
-    values.push(filters.from);
-  }
-  if (filters.to) {
-    clauses.push("orders.created_at <= ?");
-    values.push(filters.to);
-  }
+let orders: Collection<OrderDocument>;
+let inventory: Collection<InventoryDocument>;
+let products: Collection<ProductDocument>;
+let auditLogs: Collection<AuditLogEntry>;
+let processedStripeEvents: Collection<ProcessedStripeEvent>;
 
-  const where = `WHERE ${clauses.join(" AND ")}`;
+const seedProducts: ProductDocument[] = [
+  { id: "kit-balcon-basico", name: "Kit balcón básico", description: "Lechuga, cilantro y cebollín para espacios con 2-3 horas de luz.", priceUsd: 24.9, tag: "Inicio", imageUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop", active: 1, createdAt: "", updatedAt: "" },
+  { id: "kit-microverde-rapido", name: "Kit microverde rápido", description: "Microbrotes listos en 7-10 días, ideal para cocinas en apartamentos.", priceUsd: 29.9, tag: "Más vendido", imageUrl: "https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?w=400&h=300&fit=crop", active: 1, createdAt: "", updatedAt: "" },
+  { id: "kit-aromaticas-compacto", name: "Kit aromáticas compacto", description: "Albahaca, menta y perejil con guía de poda y riego urbano.", priceUsd: 34.9, tag: "Premium", imageUrl: "https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?w=400&h=300&fit=crop", active: 1, createdAt: "", updatedAt: "" },
+];
 
-  const totals = db
-    .query(
-      `SELECT
-        COUNT(*) AS paidOrders,
-        COALESCE(SUM(orders.amount_usd), 0) AS revenueTotalUsd
-      FROM orders
-      ${where}`,
-    )
-    .get(...values) as { paidOrders: number; revenueTotalUsd: number };
+async function initialize() {
+  await client.connect();
+  db = client.db(mongoDatabase);
+  orders = db.collection<OrderDocument>("orders"); inventory = db.collection<InventoryDocument>("inventory");
+  products = db.collection<ProductDocument>("products"); auditLogs = db.collection<AuditLogEntry>("audit_logs");
+  processedStripeEvents = db.collection<ProcessedStripeEvent>("processed_stripe_events");
+  await Promise.all([
+    orders.createIndex({ checkoutSessionId: 1 }, { unique: true }), orders.createIndex({ buyerId: 1, createdAt: -1 }),
+    orders.createIndex({ buyerEmail: 1, createdAt: -1 }), products.createIndex({ id: 1 }, { unique: true }),
+    inventory.createIndex({ sku: 1 }, { unique: true }), auditLogs.createIndex({ timestamp: -1 }),
+    processedStripeEvents.createIndex({ eventId: 1 }, { unique: true }),
+  ]);
+  const now = new Date().toISOString();
+  await Promise.all(seedProducts.flatMap((product, index) => [
+    products.updateOne({ id: product.id }, { $setOnInsert: { ...product, createdAt: now, updatedAt: now } }, { upsert: true }),
+    inventory.updateOne({ sku: product.id }, { $setOnInsert: { sku: product.id, stock: [18, 24, 15][index], minimumStock: [5, 8, 5][index], updatedAt: now } }, { upsert: true }),
+  ]));
+}
 
-  const totalOrdersRow = db
-    .query(
-      `SELECT COUNT(*) AS totalOrders FROM orders ${
-        filters.from || filters.to
-          ? `WHERE ${[
-              filters.from ? "created_at >= ?" : null,
-              filters.to ? "created_at <= ?" : null,
-            ]
-              .filter(Boolean)
-              .join(" AND ")}`
-          : ""
-      }`,
-    )
-    .get(...values) as { totalOrders: number };
+export const dbReady = initialize();
+async function ready() { await dbReady; }
+async function createInventoryIfMissing(sku: string, session?: ClientSession) { await ready(); const now = new Date().toISOString(); await inventory.updateOne({ sku }, { $setOnInsert: { sku, stock: 0, minimumStock: 0, updatedAt: now } }, { upsert: true, session }); }
 
-  const byProduct = db
-    .query(
-      `SELECT
-        orders.product_id AS productId,
-        products.name AS productName,
-        COALESCE(SUM(orders.quantity), 0) AS unitsSold,
-        COALESCE(SUM(orders.amount_usd), 0) AS revenueUsd
-      FROM orders
-      LEFT JOIN products ON products.id = orders.product_id
-      ${where}
-      GROUP BY orders.product_id
-      ORDER BY unitsSold DESC`,
-    )
-    .all(...values) as {
-    productId: string;
-    productName: string | null;
-    unitsSold: number;
-    revenueUsd: number;
-  }[];
+export async function listOrders() { await ready(); return orders.find({}, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray(); }
+export async function listOrdersByBuyer(buyerId: string, buyerEmail?: string | null) {
+  await ready(); const email = buyerEmail?.trim().toLowerCase();
+  const filter: Filter<OrderDocument> = email ? { $or: [{ buyerId }, { buyerEmail: email }] } : { buyerId };
+  const rows = await orders.find(filter, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
+  const productMap = new Map((await products.find({ id: { $in: rows.map((r) => r.productId) } }).toArray()).map((p) => [p.id, p]));
+  return rows.map((row) => { const product = productMap.get(row.productId); return { ...row, productName: product?.name ?? null, productDescription: product?.description ?? null, productImageUrl: product?.imageUrl ?? null }; });
+}
+export async function listPendingOrders(): Promise<PendingOrder[]> { await ready(); return orders.find({ status: "pending" }, { projection: { _id: 0, checkoutSessionId: 1, productId: 1, buyerId: 1, amountUsd: 1, quantity: 1 } }).toArray() as Promise<PendingOrder[]>; }
 
-  const topProduct = byProduct.length > 0
-    ? {
-        productId: byProduct[0].productId,
-        productName: byProduct[0].productName,
-        unitsSold: byProduct[0].unitsSold,
-      }
-    : null;
+async function adjustInventory(productId: string, delta: number, session: ClientSession) {
+  if (!delta) return;
+  await createInventoryIfMissing(productId, session);
+  const now = new Date().toISOString();
+  const filter: Filter<InventoryDocument> = delta < 0 ? { sku: productId, stock: { $gte: -delta } } : { sku: productId };
+  const result = await inventory.updateOne(filter, { $inc: { stock: delta }, $set: { updatedAt: now } }, { session });
+  if (result.matchedCount === 0) throw new Error(`Stock insuficiente para ${productId}: se requieren ${-delta} unidades`);
+}
+function holdsInventory(status: OrderStatus) {
+  return status === "pending" || status === "paid";
+}
 
-  return {
-    from: filters.from ?? null,
-    to: filters.to ?? null,
-    totalOrders: totalOrdersRow.totalOrders,
-    paidOrders: totals.paidOrders,
-    revenueTotalUsd: Number(totals.revenueTotalUsd.toFixed(2)),
-    averageOrderValueUsd:
-      totals.paidOrders > 0 ? Number((totals.revenueTotalUsd / totals.paidOrders).toFixed(2)) : 0,
-    topProduct,
-    byProduct,
+async function reconcileReservedInventory(previous: Pick<OrderDocument, "productId" | "status" | "quantity"> | null, next: Pick<OrderDocument, "productId" | "status" | "quantity">, session: ClientSession) {
+  const deltas = new Map<string, number>();
+  if (previous && holdsInventory(previous.status)) deltas.set(previous.productId, (deltas.get(previous.productId) ?? 0) + previous.quantity);
+  if (holdsInventory(next.status)) deltas.set(next.productId, (deltas.get(next.productId) ?? 0) - next.quantity);
+  for (const [productId, delta] of deltas) await adjustInventory(productId, delta, session);
+}
+export async function updateOrderStatus(orderId: string, status: OrderStatus) {
+  await ready();
+  await client.withSession(async (session) => session.withTransaction(async () => {
+    const previous = await orders.findOne({ id: orderId }, { session });
+    if (!previous || previous.status === status) return;
+    await reconcileReservedInventory(previous, { ...previous, status }, session);
+    await orders.updateOne({ id: orderId }, { $set: { status, updatedAt: new Date().toISOString() } }, { session });
+  }));
+}
+export async function cancelPendingCheckoutOrders(stripeSessionId: string) {
+  await ready();
+  const escaped = stripeSessionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return client.withSession(async (session) => session.withTransaction(async () => {
+    const pending = await orders.find(
+      { checkoutSessionId: { $regex: `^${escaped}:` }, status: "pending" },
+      { session },
+    ).toArray();
+    for (const order of pending) {
+      await reconcileReservedInventory(order, { ...order, status: "cancelled" }, session);
+    }
+    if (pending.length > 0) {
+      await orders.updateMany(
+        { id: { $in: pending.map((order) => order.id) }, status: "pending" },
+        { $set: { status: "cancelled", updatedAt: new Date().toISOString() } },
+        { session },
+      );
+    }
+    return pending.map((order) => order.id);
+  }));
+}
+export async function getInventoryStock(sku: string) { await createInventoryIfMissing(sku); return (await inventory.findOne({ sku }))?.stock ?? 0; }
+
+export async function upsertOrderFromCheckout(params: { checkoutSessionId: string; productId: string; buyerId: string; buyerEmail?: string | null; status: OrderStatus; amountUsd: number; quantity?: number }, session?: ClientSession) {
+  await ready();
+  const execute = async (activeSession: ClientSession) => {
+    const existing = await orders.findOne({ checkoutSessionId: params.checkoutSessionId }, { session: activeSession }); const now = new Date().toISOString(); const quantity = Math.max(1, Math.floor(params.quantity ?? 1));
+    const next = { productId: params.productId, status: params.status, quantity };
+    await reconcileReservedInventory(existing, next, activeSession);
+    if (existing) { await orders.updateOne({ id: existing.id }, { $set: { status: params.status, amountUsd: params.amountUsd, quantity, productId: params.productId, buyerId: params.buyerId, ...(params.buyerEmail ? { buyerEmail: params.buyerEmail.trim().toLowerCase() } : {}), updatedAt: now } }, { session: activeSession }); return; }
+    await orders.insertOne({ id: randomUUID(), checkoutSessionId: params.checkoutSessionId, productId: params.productId, buyerId: params.buyerId, buyerEmail: params.buyerEmail?.trim().toLowerCase() || null, status: params.status, quantity, amountUsd: params.amountUsd, createdAt: now, updatedAt: now }, { session: activeSession });
   };
+  if (session) return execute(session);
+  return client.withSession(async (newSession) => newSession.withTransaction(() => execute(newSession)));
 }
+export async function listInventory() { await ready(); return inventory.find({}, { projection: { _id: 0 } }).sort({ sku: 1 }).toArray(); }
+export async function updateInventory(params: { sku: string; stock: number; minimumStock: number }) { await createInventoryIfMissing(params.sku); await inventory.updateOne({ sku: params.sku }, { $set: { stock: params.stock, minimumStock: params.minimumStock, updatedAt: new Date().toISOString() } }); }
 
-export function getOrderById(orderId: string) {
-  return db
-    .query(
-      `SELECT
-        id,
-        checkout_session_id AS checkoutSessionId,
-        product_id AS productId,
-        buyer_id AS buyerId,
-        buyer_email AS buyerEmail,
-        status,
-        quantity,
-        amount_usd AS amountUsd,
-        created_at AS createdAt,
-        updated_at AS updatedAt
-      FROM orders
-      WHERE id = ?`,
-    )
-    .get(orderId) as
-    | {
-        id: string;
-        checkoutSessionId: string;
-        productId: string;
-        buyerId: string;
-        buyerEmail: string | null;
-        status: OrderStatus;
-        quantity: number;
-        amountUsd: number;
-        createdAt: string;
-        updatedAt: string;
-      }
-    | null;
+function makeProductId(name: string) { const slug = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48); return `${slug || "producto"}-${randomUUID().slice(0, 8)}`; }
+async function hydrateProduct(product: (ProductDocument & { _id?: unknown }) | null): Promise<ProductRecord | null> { if (!product) return null; const item = await inventory.findOne({ sku: product.id }); const { _id: _ignored, ...clean } = product; return { ...clean, stock: item?.stock ?? 0, minimumStock: item?.minimumStock ?? 0, inventoryUpdatedAt: item?.updatedAt ?? null }; }
+export async function listProducts(options: { includeInactive?: boolean } = {}) { await ready(); const rows = await products.find(options.includeInactive ? {} : { active: 1 }).sort({ createdAt: -1 }).toArray(); return (await Promise.all(rows.map(hydrateProduct))).filter((row): row is ProductRecord => row !== null); }
+export async function getActiveProduct(productId: string) { await ready(); return hydrateProduct(await products.findOne({ id: productId, active: 1 })); }
+export async function createProduct(params: ProductInput) { await ready(); const now = new Date().toISOString(); const product = { ...params, id: makeProductId(params.name), active: 1, createdAt: now, updatedAt: now }; await products.insertOne(product); await createInventoryIfMissing(product.id); return hydrateProduct(product); }
+export async function updateProduct(productId: string, params: ProductInput) { await ready(); await products.updateOne({ id: productId }, { $set: { ...params, updatedAt: new Date().toISOString() } }); return hydrateProduct(await products.findOne({ id: productId })); }
+export async function deleteProduct(productId: string) { await ready(); return (await products.deleteOne({ id: productId })).deletedCount > 0; }
+
+export async function recordAuditLog(params: { actor: string; action: string; resource: string; details?: string }) { await ready(); await auditLogs.insertOne({ id: randomUUID(), timestamp: new Date().toISOString(), actor: params.actor, action: params.action, resource: params.resource, details: params.details ?? "" }); }
+export async function queryAuditLogs(filters: { actor?: string; action?: string; from?: string; to?: string; limit?: number }): Promise<AuditLogEntry[]> { await ready(); const filter: Filter<AuditLogEntry> = {}; if (filters.actor) filter.actor = filters.actor; if (filters.action) filter.action = filters.action; if (filters.from || filters.to) filter.timestamp = { ...(filters.from ? { $gte: filters.from } : {}), ...(filters.to ? { $lte: filters.to } : {}) }; const limit = Math.max(1, Math.min(Math.floor(filters.limit ?? 100), 500)); return auditLogs.find(filter, { projection: { _id: 0 } }).sort({ timestamp: -1 }).limit(limit).toArray(); }
+
+export async function generateSalesReport(filters: { from?: string; to?: string }): Promise<SalesReport> {
+  await ready(); const dateFilter = { ...(filters.from ? { $gte: filters.from } : {}), ...(filters.to ? { $lte: filters.to } : {}) }; const base: Filter<OrderDocument> = (filters.from || filters.to) ? { createdAt: dateFilter } : {};
+  const all = await orders.find(base).toArray(); const paid = all.filter((o) => o.status === "paid"); const names = new Map((await products.find({ id: { $in: paid.map((o) => o.productId) } }).toArray()).map((p) => [p.id, p.name]));
+  const grouped = new Map<string, { productId: string; productName: string | null; unitsSold: number; revenueUsd: number }>();
+  for (const order of paid) { const row = grouped.get(order.productId) ?? { productId: order.productId, productName: names.get(order.productId) ?? null, unitsSold: 0, revenueUsd: 0 }; row.unitsSold += order.quantity; row.revenueUsd += order.amountUsd; grouped.set(order.productId, row); }
+  const byProduct = [...grouped.values()].sort((a, b) => b.unitsSold - a.unitsSold).map((x) => ({ ...x, revenueUsd: Number(x.revenueUsd.toFixed(2)) })); const revenue = paid.reduce((sum, o) => sum + o.amountUsd, 0);
+  return { from: filters.from ?? null, to: filters.to ?? null, totalOrders: all.length, paidOrders: paid.length, revenueTotalUsd: Number(revenue.toFixed(2)), averageOrderValueUsd: paid.length ? Number((revenue / paid.length).toFixed(2)) : 0, topProduct: byProduct[0] ? { productId: byProduct[0].productId, productName: byProduct[0].productName, unitsSold: byProduct[0].unitsSold } : null, byProduct };
 }
+export async function getOrderById(orderId: string) { await ready(); return orders.findOne({ id: orderId }, { projection: { _id: 0 } }); }
+
+export async function hasProcessedStripeEvent(eventId: string) { await ready(); return Boolean(await processedStripeEvents.findOne({ eventId })); }
+export async function markStripeEventProcessed(eventId: string, type: string) { await ready(); const result = await processedStripeEvents.updateOne({ eventId }, { $setOnInsert: { eventId, type, processedAt: new Date().toISOString() } }, { upsert: true }); return result.upsertedCount === 1; }
+export async function processStripeEventAtomically(eventId: string, type: string, handler: (session: ClientSession) => Promise<void>) {
+  await ready();
+  try {
+    return await client.withSession(async (session) => session.withTransaction(async () => {
+      await processedStripeEvents.insertOne({ eventId, type, processedAt: new Date().toISOString() }, { session });
+      await handler(session);
+      return true;
+    }));
+  } catch (error) {
+    if (error instanceof MongoServerError && error.code === 11000) return false;
+    throw error;
+  }
+}
+export async function runInTransaction<T>(handler: (session: ClientSession) => Promise<T>) {
+  await ready();
+  return client.withSession(async (session) => session.withTransaction(() => handler(session)));
+}
+export async function closeDatabase() { await client.close(); }

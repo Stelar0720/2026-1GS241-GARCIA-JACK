@@ -4,29 +4,29 @@ Basado en el PRD, el plan de ejecución y la estrategia de agentes/habilidades.
 
 ## P0 (crítico)
 
-1. [ ] Decidir framework de backoffice: React + Vite o React + TanStack.
-2. [ ] Separar backoffice admin en app independiente.
-3. [ ] Definir servicio/API con Bun para persistencia de órdenes e inventario.
-4. [ ] Crear `docker-compose.yml` para orquestar storefront, backoffice, API y base de datos.
-5. [ ] Auditar configuración base de Clerk/Stripe por entorno.
-6. [ ] Estandarizar mensajes de error en auth, checkout y rutas protegidas.
-7. [ ] Verificar reglas de rol admin (`metadata` + `ADMIN_EMAILS`).
-8. [ ] Crear endpoint de webhook Stripe con validación de firma.
-9. [ ] Definir modelo de datos de órdenes.
-10. [ ] Implementar idempotencia para eventos webhook (`event.id`).
-11. [ ] Mostrar historial de compras en dashboard del cliente.
+1. [x] Decidir framework de backoffice: **React + Vite**.
+2. [x] Separar backoffice admin en app independiente.
+3. [x] Definir servicio/API con Bun + Hono para persistencia de órdenes e inventario en MongoDB.
+4. [x] Crear `docker-compose.yml` para orquestar storefront, backoffice, API y MongoDB.
+5. [x] Auditar configuración base de Clerk/Stripe por entorno y documentarla en `DEPLOY.md`.
+6. [x] Estandarizar mensajes de error en auth, checkout y rutas protegidas.
+7. [x] Verificar reglas de rol admin (`metadata` + `ADMIN_EMAILS`).
+8. [x] Crear endpoint de webhook Stripe con validación de firma.
+9. [x] Definir modelo de datos de órdenes.
+10. [x] Implementar deduplicación de eventos webhook por `event.id` durante la ejecución del API.
+11. [x] Mostrar historial de compras en dashboard del cliente.
 
 ## P1 (operación)
 
-1. [ ] Crear módulo admin para listar órdenes.
-2. [ ] Permitir actualización de estado operativo del pedido.
+1. [x] Crear módulo admin para listar órdenes.
+2. [x] Permitir actualización de estado operativo del pedido.
 3. [ ] Agregar filtros admin por estado, fecha y producto.
-4. [ ] Implementar inventario mínimo por SKU con alerta de stock bajo.
+4. [ ] Completar alerta configurable de stock bajo (el inventario y la edición de stock ya funcionan).
 
 ## P2 (crecimiento comercial)
 
-1. [ ] Implementar carrito multi-producto.
-2. [ ] Adaptar checkout para múltiples `line_items`.
+1. [x] Implementar carrito multi-producto persistente en `localStorage`.
+2. [x] Adaptar checkout para múltiples `line_items`.
 3. [ ] Agregar cupones y bundles básicos.
 4. [ ] Instrumentar analítica de embudo (visita -> checkout -> pago).
 
@@ -58,4 +58,3 @@ Basado en el PRD, el plan de ejecución y la estrategia de agentes/habilidades.
 - Stripe para pagos.
 - Clerk para autenticación y control de acceso.
 - Bun para la capa de datos/base de datos.
-

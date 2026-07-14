@@ -4,8 +4,8 @@ Arquitectura dividida para ecommerce B2C de kits de cultivo urbano:
 
 1. **Storefront** en **React + Vite** (`/` y `/dashboard` cliente).
 2. **Backoffice admin** en **React + Vite** (`admin-backoffice/`, fuera de Next).
-3. **Data/API service** en **Bun** con persistencia SQLite (`bun-api/`).
-4. **Orquestación** con **Docker Compose**.
+3. **API** en **Bun + Hono** con persistencia **MongoDB** (`bun-api/`).
+4. **Orquestación** con **Docker Compose** (storefront, backoffice, API y MongoDB).
 
 ## Incluye
 
@@ -13,6 +13,7 @@ Arquitectura dividida para ecommerce B2C de kits de cultivo urbano:
 2. **Autenticación con Clerk** (Google, Microsoft y OTP vía configuración de Clerk).
 3. **Checkout con Stripe** vía API Bun (`POST /api/checkout`).
 4. **Backoffice desacoplado** para operación administrativa.
+5. **Servidor MCP** autenticado por rol e importable desde Claude Code/Codex.
 5. **Tipos de usuario**:
    - `cliente` (por defecto)
    - `admin` (si email está en `ADMIN_EMAILS` o metadata de Clerk)
@@ -48,6 +49,14 @@ Para API Bun:
 bun --cwd bun-api install
 npm run dev:api
 ```
+
+La API requiere MongoDB. Para levantar MongoDB y el API juntos:
+
+```bash
+docker compose up -d --build mongo bun-api
+```
+
+Variables principales: `MONGODB_URI` y `MONGODB_DATABASE`; consulta `bun-api/.env.example`.
 
 ### Stack completo con Docker Compose
 

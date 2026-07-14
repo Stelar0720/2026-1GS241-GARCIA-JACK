@@ -9,4 +9,4 @@ COPY bun-api .
 
 EXPOSE 4000
 
-CMD ["bun", "run", "dev"]
+CMD ["bun", "run", "start"]

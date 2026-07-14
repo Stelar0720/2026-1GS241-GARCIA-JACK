@@ -1040,5 +1040,6 @@ function AppWithoutClerk() {
 }
 
 export default function App() {
-  return isClerkConfigured() ? <AppWithClerk /> : <AppWithoutClerk />;
+  const clerkEnabled = import.meta.env.VITE_E2E !== "true" && isClerkConfigured();
+  return clerkEnabled ? <AppWithClerk /> : <AppWithoutClerk />;
 }
