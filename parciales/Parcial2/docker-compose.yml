@@ -30,8 +30,8 @@ services:
 
   bun-api:
     build:
-      context: .
-      dockerfile: Dockerfile.bun-api
+      context: ./bun-api
+      dockerfile: Dockerfile
     ports:
       - "4000:4000"
     environment:
@@ -39,9 +39,38 @@ services:
       ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
-      BUN_DB_PATH: /data/urbansprout.sqlite
+      MONGODB_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGODB_DATABASE: urbansprout
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+
+  mongo:
+    image: mongo:8.0
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
     volumes:
-      - bun-data:/data
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongo-init:
+    image: mongo:8.0
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    command:
+      - bash
+      - -c
+      - >-
+        mongosh --host mongo:27017 --quiet --eval
+        "try { rs.status().ok } catch (error) {
+        rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }"
 
 volumes:
-  bun-data:
+  mongo-data:

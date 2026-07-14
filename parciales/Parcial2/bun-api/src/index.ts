@@ -1,8 +1,11 @@
 import Stripe from "stripe";
+import { Hono } from "hono";
+import type { ClientSession } from "mongodb";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import {
+  cancelPendingCheckoutOrders,
   createProduct,
   deleteProduct,
   generateSalesReport,
@@ -23,6 +26,9 @@ import {
   updateOrderStatus,
   updateProduct,
   upsertOrderFromCheckout,
+  dbReady,
+  processStripeEventAtomically,
+  runInTransaction,
 } from "./db";
 import {
   extractBearerKey,
@@ -34,14 +40,13 @@ import {
   ROLE_PERMISSIONS,
 } from "./auth";
 
-const port = Number(process.env.API_PORT || 4000);
+const port = Number(process.env.PORT || process.env.API_PORT || 4000);
 const uploadsDir = join(process.cwd(), "public", "uploads");
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-const processedEvents = new Set<string>();
 if (!existsSync(uploadsDir)) {
   mkdirSync(uploadsDir, { recursive: true });
 }
@@ -52,7 +57,7 @@ function getCorsHeaders(origin: string | null) {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": safeOrigin,
     "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type,Stripe-Signature",
+    "Access-Control-Allow-Headers": "Authorization,Content-Type,Stripe-Signature",
   };
 }
 
@@ -128,7 +133,7 @@ function getImageContentType(fileName: string) {
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY?.trim();
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
 const stripeClient = stripeSecretKey
-  ? new Stripe(stripeSecretKey, { apiVersion: "2026-03-25.dahlia" })
+  ? new Stripe(stripeSecretKey, { apiVersion: "2026-04-22.dahlia" })
   : null;
 
 function readProductInput(body: Partial<ProductInput>) {
@@ -195,16 +200,16 @@ function normalizeCheckoutLines(body: {
   );
 }
 
-function buildCheckoutLines(items: CheckoutLineInput[]) {
+async function buildCheckoutLines(items: CheckoutLineInput[]) {
   const lines: CheckoutLine[] = [];
 
   for (const item of items) {
-    const product = getActiveProduct(item.productId);
+    const product = await getActiveProduct(item.productId);
     if (!product) {
       return { error: "Uno de los productos del carrito no es vÃ¡lido." };
     }
 
-    if (getInventoryStock(product.id) < item.quantity) {
+    if ((await getInventoryStock(product.id)) < item.quantity) {
       return { error: `${product.name} no tiene stock suficiente.` };
     }
 
@@ -254,12 +259,13 @@ function readCheckoutLinesFromSession(session: Stripe.Checkout.Session, fallback
   ];
 }
 
-function upsertOrdersFromCheckoutSession(params: {
+async function upsertOrdersFromCheckoutSession(params: {
   session: Stripe.Checkout.Session;
   fallbackProductId: string;
   fallbackBuyerId: string;
   fallbackBuyerEmail?: string | null;
   status: OrderStatus;
+  dbSession?: ClientSession;
 }) {
   const buyerId = params.session.metadata?.buyerId ?? params.fallbackBuyerId;
   const buyerEmail =
@@ -269,7 +275,7 @@ function upsertOrdersFromCheckoutSession(params: {
     null;
 
   for (const line of readCheckoutLinesFromSession(params.session, params.fallbackProductId)) {
-    upsertOrderFromCheckout({
+    await upsertOrderFromCheckout({
       checkoutSessionId: getCheckoutOrderId(params.session.id, line.productId),
       productId: line.productId,
       buyerId,
@@ -277,14 +283,14 @@ function upsertOrdersFromCheckoutSession(params: {
       status: params.status,
       quantity: line.quantity,
       amountUsd: line.amountUsd,
-    });
+    }, params.dbSession);
   }
 }
 
 async function refreshPendingOrdersWithStripe() {
   if (!stripeClient) return;
 
-  const pendingOrders = listPendingOrders();
+  const pendingOrders = await listPendingOrders();
   for (const order of pendingOrders) {
     try {
       const stripeSessionId = order.checkoutSessionId.split(":")[0];
@@ -296,7 +302,7 @@ async function refreshPendingOrdersWithStripe() {
             ? "cancelled"
             : "pending";
 
-      upsertOrdersFromCheckoutSession({
+      await upsertOrdersFromCheckoutSession({
         session,
         fallbackProductId: order.productId,
         fallbackBuyerId: order.buyerId,
@@ -332,7 +338,7 @@ async function syncBuyerOrdersWithStripe(buyerId: string, buyerEmail?: string | 
           ? "cancelled"
           : "pending";
 
-    upsertOrdersFromCheckoutSession({
+    await upsertOrdersFromCheckoutSession({
       session,
       fallbackProductId: session.metadata?.productId ?? "unknown-product",
       fallbackBuyerId: sessionBuyerId || buyerId,
@@ -342,9 +348,42 @@ async function syncBuyerOrdersWithStripe(buyerId: string, buyerEmail?: string | 
   }
 }
 
-Bun.serve({
-  port,
-  async fetch(req) {
+async function cancelCheckoutForOrder(order: NonNullable<Awaited<ReturnType<typeof getOrderById>>>) {
+  if (order.status === "paid") {
+    throw new Error("Una orden pagada requiere un reembolso; no puede cancelarse directamente.");
+  }
+
+  const stripeSessionId = order.checkoutSessionId.split(":")[0];
+  if (!stripeClient) {
+    throw new Error("Stripe no está configurado; no es seguro liberar la reserva.");
+  }
+
+  let checkoutSession = await stripeClient.checkout.sessions.retrieve(stripeSessionId);
+  if (checkoutSession.status === "open") {
+    checkoutSession = await stripeClient.checkout.sessions.expire(stripeSessionId);
+  }
+  if (checkoutSession.status !== "expired") {
+    if (checkoutSession.status === "complete" || checkoutSession.payment_status === "paid") {
+      await upsertOrdersFromCheckoutSession({
+        session: checkoutSession,
+        fallbackProductId: order.productId,
+        fallbackBuyerId: order.buyerId,
+        fallbackBuyerEmail: order.buyerEmail,
+        status: "paid",
+      });
+    }
+    throw new Error("Stripe ya completó el checkout; la orden requiere un reembolso.");
+  }
+
+  return cancelPendingCheckoutOrders(stripeSessionId);
+}
+
+await dbReady;
+
+const app = new Hono();
+
+app.all("*", async (context) => {
+    const req = context.req.raw;
     const url = new URL(req.url);
     const origin = req.headers.get("origin");
 
@@ -360,7 +399,7 @@ Bun.serve({
         {
           ok: true,
           service: "urbansprout-bun-api",
-          db: process.env.BUN_DB_PATH?.trim() || "./data/urbansprout.sqlite",
+          db: "mongodb",
         },
         { origin },
       );
@@ -368,7 +407,7 @@ Bun.serve({
 
     if (req.method === "GET" && url.pathname === "/products") {
       const includeInactive = url.searchParams.get("includeInactive") === "true";
-      return jsonResponse({ data: listProducts({ includeInactive }) }, { origin });
+      return jsonResponse({ data: await listProducts({ includeInactive }) }, { origin });
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/uploads/")) {
@@ -419,8 +458,8 @@ Bun.serve({
         return jsonResponse({ error: parsed.error }, { status: 400, origin });
       }
 
-      const created = createProduct(parsed.data);
-      recordAuditLog({ actor: "backoffice", action: "product.create", resource: created?.id ?? "", details: parsed.data.name });
+      const created = await createProduct(parsed.data);
+      await recordAuditLog({ actor: "backoffice", action: "product.create", resource: created?.id ?? "", details: parsed.data.name });
       return jsonResponse({ data: created }, { status: 201, origin });
     }
 
@@ -436,22 +475,22 @@ Bun.serve({
           return jsonResponse({ error: parsed.error }, { status: 400, origin });
         }
 
-        const product = updateProduct(productId, parsed.data);
+        const product = await updateProduct(productId, parsed.data);
         if (!product) {
           return jsonResponse({ error: "Producto no encontrado." }, { status: 404, origin });
         }
 
-        recordAuditLog({ actor: "backoffice", action: "product.update", resource: productId });
+        await recordAuditLog({ actor: "backoffice", action: "product.update", resource: productId });
         return jsonResponse({ data: product }, { origin });
       }
 
       if (req.method === "DELETE") {
-        const deleted = deleteProduct(productId);
+        const deleted = await deleteProduct(productId);
         if (!deleted) {
           return jsonResponse({ error: "Producto no encontrado." }, { status: 404, origin });
         }
 
-        recordAuditLog({ actor: "backoffice", action: "product.delete", resource: productId });
+        await recordAuditLog({ actor: "backoffice", action: "product.delete", resource: productId });
         return jsonResponse({ ok: true }, { origin });
       }
     }
@@ -471,7 +510,7 @@ Bun.serve({
         userEmail?: string | null;
       };
 
-      const parsedLines = buildCheckoutLines(normalizeCheckoutLines(body));
+      const parsedLines = await buildCheckoutLines(normalizeCheckoutLines(body));
       if ("error" in parsedLines) {
         return jsonResponse({ error: parsedLines.error }, { status: 400, origin });
       }
@@ -486,8 +525,9 @@ Bun.serve({
         amountUsd: line.amountUsd,
       }));
 
+      let checkoutSession: Stripe.Checkout.Session | null = null;
       try {
-        const session = await stripeClient.checkout.sessions.create({
+        checkoutSession = await stripeClient.checkout.sessions.create({
           mode: "payment",
           success_url: `${storefrontUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${storefrontUrl}/checkout/cancelled`,
@@ -510,29 +550,41 @@ Bun.serve({
             })),
         });
 
-        for (const line of checkoutLines) {
-          upsertOrderFromCheckout({
-            checkoutSessionId: getCheckoutOrderId(session.id, line.product.id),
-            productId: line.product.id,
-            buyerId,
-            buyerEmail: normalizedEmail ?? null,
-            status: "pending",
-            quantity: line.quantity,
-            amountUsd: line.amountUsd,
-          });
-        }
+        await runInTransaction(async (dbSession) => {
+          for (const line of checkoutLines) {
+            await upsertOrderFromCheckout({
+              checkoutSessionId: getCheckoutOrderId(checkoutSession!.id, line.product.id),
+              productId: line.product.id,
+              buyerId,
+              buyerEmail: normalizedEmail ?? null,
+              status: "pending",
+              quantity: line.quantity,
+              amountUsd: line.amountUsd,
+            }, dbSession);
+          }
+        });
 
-        return jsonResponse({ checkoutUrl: session.url }, { origin });
+        return jsonResponse({ checkoutUrl: checkoutSession.url }, { origin });
       } catch (error) {
+        if (checkoutSession?.id && checkoutSession.status === "open") {
+          try {
+            await stripeClient.checkout.sessions.expire(checkoutSession.id);
+          } catch (expireError) {
+            console.error(`[checkout] No se pudo expirar ${checkoutSession.id}`, expireError);
+          }
+        }
         const message =
           error instanceof Error ? error.message : "Error al crear la sesión de Stripe.";
-        return jsonResponse({ error: message }, { status: 500, origin });
+        return jsonResponse(
+          { error: message },
+          { status: message.includes("Stock insuficiente") ? 409 : 500, origin },
+        );
       }
     }
 
     if (req.method === "GET" && url.pathname === "/orders") {
       await refreshPendingOrdersWithStripe();
-      return jsonResponse({ data: listOrders() }, { origin });
+      return jsonResponse({ data: await listOrders() }, { origin });
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/customers/") && url.pathname.endsWith("/orders")) {
@@ -545,7 +597,7 @@ Bun.serve({
 
       await refreshPendingOrdersWithStripe();
       await syncBuyerOrdersWithStripe(buyerId, buyerEmail);
-      return jsonResponse({ data: listOrdersByBuyer(buyerId, buyerEmail) }, { origin });
+      return jsonResponse({ data: await listOrdersByBuyer(buyerId, buyerEmail) }, { origin });
     }
 
     if (req.method === "PATCH" && url.pathname.startsWith("/orders/")) {
@@ -559,13 +611,29 @@ Bun.serve({
         return jsonResponse({ error: "Estado de orden inválido." }, { status: 400, origin });
       }
 
-      updateOrderStatus(orderId, body.status);
-      recordAuditLog({ actor: "backoffice", action: "order.status", resource: orderId, details: body.status });
+      const order = await getOrderById(orderId);
+      if (!order) {
+        return jsonResponse({ error: "Orden no encontrada." }, { status: 404, origin });
+      }
+      if (body.status === "cancelled") {
+        try {
+          await cancelCheckoutForOrder(order);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "No se pudo cancelar el checkout.";
+          return jsonResponse(
+            { error: message },
+            { status: message.startsWith("Stripe no está configurado") ? 503 : 409, origin },
+          );
+        }
+      } else {
+        await updateOrderStatus(orderId, body.status);
+      }
+      await recordAuditLog({ actor: "backoffice", action: "order.status", resource: orderId, details: body.status });
       return jsonResponse({ ok: true }, { origin });
     }
 
     if (req.method === "GET" && url.pathname === "/inventory") {
-      return jsonResponse({ data: listInventory() }, { origin });
+      return jsonResponse({ data: await listInventory() }, { origin });
     }
 
     if (req.method === "PATCH" && url.pathname.startsWith("/inventory/")) {
@@ -579,8 +647,8 @@ Bun.serve({
         return jsonResponse({ error: "Stock es requerido." }, { status: 400, origin });
       }
 
-      updateInventory({ sku, stock: body.stock, minimumStock: body.minimumStock ?? 0 });
-      recordAuditLog({ actor: "backoffice", action: "inventory.update", resource: sku, details: `stock=${body.stock}` });
+      await updateInventory({ sku, stock: body.stock, minimumStock: body.minimumStock ?? 0 });
+      await recordAuditLog({ actor: "backoffice", action: "inventory.update", resource: sku, details: `stock=${body.stock}` });
       return jsonResponse({ ok: true }, { origin });
     }
 
@@ -607,19 +675,21 @@ Bun.serve({
         return jsonResponse({ error: message }, { status: 400, origin });
       }
 
-      if (processedEvents.has(event.id)) {
-        return jsonResponse({ ok: true, deduplicated: true }, { origin });
-      }
-      processedEvents.add(event.id);
+      const processed = await processStripeEventAtomically(event.id, event.type, async (dbSession) => {
+        if (event.type === "checkout.session.completed" || event.type === "checkout.session.expired") {
+          const checkoutSession = event.data.object as Stripe.Checkout.Session;
+          await upsertOrdersFromCheckoutSession({
+            session: checkoutSession,
+            fallbackProductId: checkoutSession.metadata?.productId ?? "unknown-product",
+            fallbackBuyerId: checkoutSession.metadata?.buyerId ?? "unknown-buyer",
+            status: event.type === "checkout.session.completed" ? "paid" : "cancelled",
+            dbSession,
+          });
+        }
+      });
 
-      if (event.type === "checkout.session.completed" || event.type === "checkout.session.expired") {
-        const session = event.data.object as Stripe.Checkout.Session;
-        upsertOrdersFromCheckoutSession({
-          session,
-          fallbackProductId: session.metadata?.productId ?? "unknown-product",
-          fallbackBuyerId: session.metadata?.buyerId ?? "unknown-buyer",
-          status: event.type === "checkout.session.completed" ? "paid" : "cancelled",
-        });
+      if (!processed) {
+        return jsonResponse({ ok: true, deduplicated: true }, { origin });
       }
 
       return jsonResponse({ ok: true }, { origin });
@@ -666,11 +736,11 @@ Bun.serve({
       const auth = authorize(req, "reports:read", origin);
       if ("error" in auth) return auth.error;
 
-      const report = generateSalesReport({
+      const report = await generateSalesReport({
         from: url.searchParams.get("from")?.trim() || undefined,
         to: url.searchParams.get("to")?.trim() || undefined,
       });
-      recordAuditLog({ actor: auth.role, action: "reports.sales", resource: "orders" });
+      await recordAuditLog({ actor: auth.role, action: "reports.sales", resource: "orders" });
       return jsonResponse({ data: report }, { origin });
     }
 
@@ -683,12 +753,12 @@ Bun.serve({
       const format = url.searchParams.get("format") === "csv" ? "csv" : "json";
       const rows =
         type === "products"
-          ? (listProducts({ includeInactive: true }) as unknown as Record<string, unknown>[])
+          ? (await listProducts({ includeInactive: true }) as unknown as Record<string, unknown>[])
           : type === "inventory"
-            ? (listInventory() as Record<string, unknown>[])
-            : (listOrders() as Record<string, unknown>[]);
+            ? (await listInventory() as Record<string, unknown>[])
+            : (await listOrders() as Record<string, unknown>[]);
 
-      recordAuditLog({ actor: auth.role, action: "export", resource: type, details: format });
+      await recordAuditLog({ actor: auth.role, action: "export", resource: type, details: format });
 
       if (format === "csv") {
         return new Response(toCsv(rows), {
@@ -707,7 +777,7 @@ Bun.serve({
       const auth = authorize(req, "audit:read", origin);
       if ("error" in auth) return auth.error;
 
-      const logs = queryAuditLogs({
+      const logs = await queryAuditLogs({
         actor: url.searchParams.get("actor")?.trim() || undefined,
         action: url.searchParams.get("action")?.trim() || undefined,
         from: url.searchParams.get("from")?.trim() || undefined,
@@ -723,7 +793,7 @@ Bun.serve({
       if ("error" in auth) return auth.error;
 
       const orderId = decodeURIComponent(url.pathname.split("/")[2] || "");
-      const order = getOrderById(orderId);
+      const order = await getOrderById(orderId);
       if (!order) {
         return jsonResponse({ error: "Orden no encontrada." }, { status: 404, origin });
       }
@@ -734,9 +804,17 @@ Bun.serve({
         );
       }
 
-      updateOrderStatus(orderId, "cancelled");
-      recordAuditLog({ actor: auth.role, action: "order.cancel", resource: orderId });
-      return jsonResponse({ ok: true, order: getOrderById(orderId) }, { origin });
+      try {
+        await cancelCheckoutForOrder(order);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "No se pudo cancelar el checkout.";
+        return jsonResponse(
+          { error: message },
+          { status: message.startsWith("Stripe no está configurado") ? 503 : 409, origin },
+        );
+      }
+      await recordAuditLog({ actor: auth.role, action: "order.cancel", resource: orderId });
+      return jsonResponse({ ok: true, order: await getOrderById(orderId) }, { origin });
     }
 
     // Dispara la sincronización de órdenes pendientes con Stripe (HU-031).
@@ -744,10 +822,10 @@ Bun.serve({
       const auth = authorize(req, "orders:sync", origin);
       if ("error" in auth) return auth.error;
 
-      const before = listPendingOrders().length;
+      const before = (await listPendingOrders()).length;
       await refreshPendingOrdersWithStripe();
-      const after = listPendingOrders().length;
-      recordAuditLog({ actor: auth.role, action: "orders.sync", resource: "orders" });
+      const after = (await listPendingOrders()).length;
+      await recordAuditLog({ actor: auth.role, action: "orders.sync", resource: "orders" });
       return jsonResponse(
         { ok: true, pendingBefore: before, pendingAfter: after, reconciled: Math.max(0, before - after) },
         { origin },
@@ -755,7 +833,11 @@ Bun.serve({
     }
 
     return jsonResponse({ error: "Ruta no encontrada." }, { status: 404, origin });
-  },
+  });
+
+Bun.serve({
+  port,
+  fetch: app.fetch,
 });
 
 console.log(`UrbanSprout Bun API running on http://localhost:${port}`);

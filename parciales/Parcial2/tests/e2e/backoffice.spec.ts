@@ -7,6 +7,7 @@ test.describe("Backoffice admin", () => {
     await page.goto(BACKOFFICE_URL);
 
     await expect(page.getByRole("heading", { name: "UrbanSprout Backoffice" })).toBeVisible();
+    await expect(page.getByText("Cargando datos del backoffice...")).toHaveCount(0, { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "Productos" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Órdenes" })).toBeVisible();
   });

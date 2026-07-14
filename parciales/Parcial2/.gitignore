@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+/bun-api/node_modules/
+/bun-api/package-lock.json
 /.pnp
 .pnp.*
 .yarn/*
@@ -31,6 +33,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!bun-api/.env.example
 
 # vercel
 .vercel

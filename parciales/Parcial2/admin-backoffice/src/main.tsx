@@ -30,7 +30,7 @@ const clerkPublishableKey = getEnvAny([
   "REACT_PUBLIC_CLERK_PUBLISHABLE_KEY",
   "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
 ]);
-const clerkEnabled = hasRealValue(clerkPublishableKey);
+const clerkEnabled = import.meta.env.VITE_E2E !== "true" && hasRealValue(clerkPublishableKey);
 const app = <App clerkEnabled={clerkEnabled} />;
 
 createRoot(document.getElementById('root')!).render(

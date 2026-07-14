@@ -7,10 +7,11 @@ import { getClerkPublishableKey, isClerkConfigured } from "@/lib/env";
 import "@/styles.css";
 
 const publishableKey = getClerkPublishableKey();
+const clerkEnabled = import.meta.env.VITE_E2E !== "true" && isClerkConfigured();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {isClerkConfigured() && publishableKey ? (
+    {clerkEnabled && publishableKey ? (
       <ClerkProvider publishableKey={publishableKey}>
         <BrowserRouter>
           <App />

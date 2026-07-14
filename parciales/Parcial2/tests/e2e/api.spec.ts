@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // Tests directos contra el bun-api (levantado por `npm run dev` en :4000).
 // Deterministas: no dependen del contenido de la base, solo del contrato.
-const API_URL = "http://localhost:4000";
+const API_URL = process.env.E2E_API_URL ?? "http://localhost:4010";
 
 test("health: el API responde ok sin autenticación", async ({ request }) => {
   const response = await request.get(`${API_URL}/health`);
