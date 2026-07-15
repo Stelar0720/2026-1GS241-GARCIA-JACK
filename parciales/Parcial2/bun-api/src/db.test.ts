@@ -26,6 +26,17 @@ describe("MongoDB repository", () => {
     expect(products.every((product) => product.stock > 0)).toBe(true);
   });
 
+  test("low-stock alerts appear only below the configured minimum", async () => {
+    const productId = "kit-balcon-basico";
+    await repository.updateInventory({ sku: productId, stock: 5, minimumStock: 5 });
+    expect((await repository.listStockAlerts()).some((alert) => alert.sku === productId)).toBe(false);
+
+    await repository.upsertOrderFromCheckout({ checkoutSessionId: "cs_low_stock_alert", productId, buyerId: "buyer-alert", status: "paid", amountUsd: 24.9, quantity: 1 });
+
+    const alert = (await repository.listStockAlerts()).find((item) => item.sku === productId);
+    expect(alert).toMatchObject({ sku: productId, stock: 4, minimumStock: 5, type: "low_stock", deficit: 1 });
+  });
+
   test("product CRUD preserves the public contract", async () => {
     const created = await repository.createProduct({
       name: "Producto de prueba Mongo",

@@ -1,6 +1,9 @@
 import { SignIn, SignInButton, SignUp, UserButton, useUser } from "@clerk/clerk-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import gsap from "gsap";
+import Lenis from "lenis";
+import VanillaTilt from "vanilla-tilt";
 import { fetchProductsFromApi, fallbackProducts, Product } from "@/lib/catalog";
 import { getAdminAppUrl, getApiUrl, isClerkConfigured } from "@/lib/env";
 import { getUserRole } from "@/lib/roles";
@@ -74,7 +77,9 @@ const FREE_SHIPPING_THRESHOLD_USD = 55;
 function useThemeMode() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "light";
-    return window.localStorage.getItem("urbansprout-theme") === "dark" ? "dark" : "light";
+    const stored = window.localStorage.getItem("urbansprout-theme");
+    if (stored === "dark" || stored === "light") return stored;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
 
   useEffect(() => {
@@ -87,6 +92,60 @@ function useThemeMode() {
   }
 
   return { themeMode, toggleThemeMode };
+}
+
+function ExperienceEffects() {
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const lenis = new Lenis({ duration: 1.05, smoothWheel: true });
+    let frame = 0;
+    const raf = (time: number) => {
+      lenis.raf(time);
+      frame = requestAnimationFrame(raf);
+    };
+    frame = requestAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(frame);
+      lenis.destroy();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      window.matchMedia("(pointer: coarse)").matches ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) return;
+    const dot = document.querySelector<HTMLElement>(".cursor-dot");
+    const ring = document.querySelector<HTMLElement>(".cursor-ring");
+    if (!dot || !ring) return;
+    const moveDotX = gsap.quickTo(dot, "x", { duration: 0.08 });
+    const moveDotY = gsap.quickTo(dot, "y", { duration: 0.08 });
+    const moveRingX = gsap.quickTo(ring, "x", { duration: 0.28, ease: "power3.out" });
+    const moveRingY = gsap.quickTo(ring, "y", { duration: 0.28, ease: "power3.out" });
+    const move = (event: PointerEvent) => {
+      moveDotX(event.clientX); moveDotY(event.clientY);
+      moveRingX(event.clientX); moveRingY(event.clientY);
+    };
+    window.addEventListener("pointermove", move);
+    return () => window.removeEventListener("pointermove", move);
+  }, []);
+
+  return <div className="custom-cursor" aria-hidden="true"><span className="cursor-dot" /><span className="cursor-ring" /></div>;
+}
+
+function ProductCard({ children, className }: { children: React.ReactNode; className: string }) {
+  const cardRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    card.querySelectorAll(".js-tilt-glare").forEach((glare) => glare.remove());
+    VanillaTilt.init(card, { max: 7, speed: 450, scale: 1.015, glare: true, "max-glare": 0.12 });
+    return () => {
+      (card as HTMLElement & { vanillaTilt?: { destroy: () => void } }).vanillaTilt?.destroy();
+      card.querySelectorAll(".js-tilt-glare").forEach((glare) => glare.remove());
+    };
+  }, []);
+  return <article ref={cardRef} className={className} data-tilt-card>{children}</article>;
 }
 
 function getStockLabel(product: Product) {
@@ -269,11 +328,13 @@ function useStorefrontCart(userId: string | null, userEmail: string | null): Sto
   function updateCartQuantity(productId: string, quantity: number) {
     const product = productsById.get(productId);
     const safeQuantity = Math.max(0, Math.min(Math.floor(quantity), product?.stock ?? 0));
-    setCartItems((current) =>
-      safeQuantity === 0
-        ? current.filter((item) => item.productId !== productId)
-        : current.map((item) => (item.productId === productId ? { ...item, quantity: safeQuantity } : item)),
-    );
+    setCartItems((current) => {
+      if (safeQuantity === 0) return current.filter((item) => item.productId !== productId);
+      if (!current.some((item) => item.productId === productId)) {
+        return [...current, { productId, quantity: safeQuantity }];
+      }
+      return current.map((item) => (item.productId === productId ? { ...item, quantity: safeQuantity } : item));
+    });
   }
 
   async function checkoutCart() {
@@ -332,15 +393,55 @@ function CartDropdown({
 >) {
   const [open, setOpen] = useState(false);
   const [lastOpenCartSignal, setLastOpenCartSignal] = useState(openCartSignal);
+  const [removedLine, setRemovedLine] = useState<CartLine | null>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const undoTimerRef = useRef<number | null>(null);
 
   if (openCartSignal !== lastOpenCartSignal) {
     setLastOpenCartSignal(openCartSignal);
     if (openCartSignal > 0) setOpen(true);
   }
 
+  useEffect(() => {
+    if (!open || !drawerRef.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.fromTo(drawerRef.current, { xPercent: 105 }, { xPercent: 0, duration: 0.42, ease: "power3.out" });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    drawerRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+
+  useEffect(() => () => {
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+  }, []);
+
+  function removeLine(line: CartLine) {
+    updateCartQuantity(line.product.id, 0);
+    setRemovedLine(line);
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = window.setTimeout(() => setRemovedLine(null), 5000);
+  }
+
+  function undoRemoval() {
+    if (!removedLine) return;
+    updateCartQuantity(removedLine.product.id, removedLine.quantity);
+    setRemovedLine(null);
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+  }
+
   return (
     <div className="cart-menu">
       <button
+        ref={triggerRef}
         className="cart-menu-button"
         type="button"
         onClick={() => setOpen((current) => !current)}
@@ -351,7 +452,7 @@ function CartDropdown({
         <strong>{cartCount}</strong>
       </button>
       {open ? (
-        <div className="cart-dropdown glass">
+        <div className="cart-dropdown glass" ref={drawerRef} role="dialog" aria-modal="true" aria-label="Resumen del carrito" tabIndex={-1}>
           <div className="cart-dropdown-header">
             <h3>Carrito</h3>
             <span>{formatMoney(cartTotal)}</span>
@@ -395,7 +496,7 @@ function CartDropdown({
                     <button
                       className="remove-line-button"
                       type="button"
-                      onClick={() => updateCartQuantity(product.id, 0)}
+                      onClick={() => removeLine({ product, quantity })}
                       aria-label={`Eliminar ${product.name} del carrito`}
                       title="Eliminar"
                     >
@@ -415,6 +516,12 @@ function CartDropdown({
             {checkingOut ? "Redirigiendo..." : "Comprar carrito"}
           </button>
           {checkoutError ? <p className="status-error">{checkoutError}</p> : null}
+          {removedLine ? (
+            <div className="undo-toast" role="status">
+              <span>{removedLine.product.name} eliminado</span>
+              <button type="button" onClick={undoRemoval}>Deshacer</button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -430,6 +537,7 @@ function RootLayout({ children, cart }: { children: React.ReactNode; cart: Store
 
   return (
     <>
+      <ExperienceEffects />
       <header className="nav">
         <div className="container nav-inner">
           <Link to="/" className="brand" aria-label="Ir al inicio de UrbanSprout">
@@ -523,7 +631,7 @@ function HomePage({
                 const justAdded = lastAddedProductId === product.id;
 
                 return (
-                  <article
+                  <ProductCard
                     className={`product glass ${justAdded ? "product-added" : ""}`}
                     key={product.id}
                   >
@@ -564,7 +672,7 @@ function HomePage({
                         Ver detalles
                       </Link>
                     </div>
-                  </article>
+                  </ProductCard>
                 );
               })}
             </div>
@@ -933,6 +1041,7 @@ function AppWithoutClerk() {
 
   return (
     <>
+      <ExperienceEffects />
       <header className="nav">
         <div className="container nav-inner">
           <Link to="/" className="brand" aria-label="Ir al inicio de UrbanSprout">

@@ -21,6 +21,7 @@ export type SalesReport = {
 
 type OrderDocument = { id: string; checkoutSessionId: string; productId: string; buyerId: string; buyerEmail: string | null; status: OrderStatus; quantity: number; amountUsd: number; createdAt: string; updatedAt: string };
 type InventoryDocument = { sku: string; stock: number; minimumStock: number; updatedAt: string };
+export type StockAlert = InventoryDocument & { type: "low_stock"; deficit: number };
 type ProductDocument = ProductInput & { id: string; active: number; createdAt: string; updatedAt: string };
 type ProcessedStripeEvent = { eventId: string; type: string; processedAt: string };
 
@@ -132,7 +133,15 @@ export async function upsertOrderFromCheckout(params: { checkoutSessionId: strin
   return client.withSession(async (newSession) => newSession.withTransaction(() => execute(newSession)));
 }
 export async function listInventory() { await ready(); return inventory.find({}, { projection: { _id: 0 } }).sort({ sku: 1 }).toArray(); }
-export async function updateInventory(params: { sku: string; stock: number; minimumStock: number }) { await createInventoryIfMissing(params.sku); await inventory.updateOne({ sku: params.sku }, { $set: { stock: params.stock, minimumStock: params.minimumStock, updatedAt: new Date().toISOString() } }); }
+export async function listStockAlerts(): Promise<StockAlert[]> {
+  await ready();
+  const rows = await inventory.find(
+    { $expr: { $lt: ["$stock", "$minimumStock"] } },
+    { projection: { _id: 0 } },
+  ).sort({ stock: 1, sku: 1 }).toArray();
+  return rows.map((row) => ({ ...row, type: "low_stock", deficit: row.minimumStock - row.stock }));
+}
+export async function updateInventory(params: { sku: string; stock: number; minimumStock?: number }) { await createInventoryIfMissing(params.sku); await inventory.updateOne({ sku: params.sku }, { $set: { stock: params.stock, ...(params.minimumStock !== undefined ? { minimumStock: params.minimumStock } : {}), updatedAt: new Date().toISOString() } }); }
 
 function makeProductId(name: string) { const slug = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48); return `${slug || "producto"}-${randomUUID().slice(0, 8)}`; }
 async function hydrateProduct(product: (ProductDocument & { _id?: unknown }) | null): Promise<ProductRecord | null> { if (!product) return null; const item = await inventory.findOne({ sku: product.id }); const { _id: _ignored, ...clean } = product; return { ...clean, stock: item?.stock ?? 0, minimumStock: item?.minimumStock ?? 0, inventoryUpdatedAt: item?.updatedAt ?? null }; }

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
   FAQS,
   FOOTER,
@@ -12,19 +14,48 @@ import {
   VALUE_PROPS,
 } from "@/lib/content";
 
+gsap.registerPlugin(ScrollTrigger);
+
 // ============================================================
 // Hero
 // ============================================================
 
 export function Hero({ authAction }: { authAction?: React.ReactNode }) {
+  const heroRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!heroRef.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const context = gsap.context(() => {
+      gsap.from("[data-hero-reveal]", {
+        y: 24,
+        opacity: 0,
+        duration: 0.7,
+        stagger: 0.1,
+        ease: "power3.out",
+      });
+      gsap.from(".hero-card", { x: 42, rotate: 2, opacity: 0, duration: 0.9, ease: "power3.out" });
+      gsap.to(".hero-card", {
+        yPercent: -12,
+        ease: "none",
+        scrollTrigger: {
+          trigger: heroRef.current,
+          start: "top top",
+          end: "bottom top",
+          scrub: true,
+        },
+      });
+    }, heroRef);
+    return () => context.revert();
+  }, []);
+
   return (
-    <section className="hero">
+    <section className="hero" ref={heroRef}>
       <div className="container hero-grid">
         <div>
-          <span className="hero-badge">🌿 {HERO.badge}</span>
-          <h1>{HERO.title}</h1>
-          <p>{HERO.subtitle}</p>
-          <div className="cta-row">
+          <span className="hero-badge" data-hero-reveal>🌿 {HERO.badge}</span>
+          <h1 data-hero-reveal>{HERO.title}</h1>
+          <p data-hero-reveal>{HERO.subtitle}</p>
+          <div className="cta-row" data-hero-reveal>
             <a className="button button-primary" href="#catalogo">
               Empezar a cultivar hoy
             </a>
@@ -33,7 +64,7 @@ export function Hero({ authAction }: { authAction?: React.ReactNode }) {
             </a>
             {authAction}
           </div>
-          <ul className="hero-trust" aria-label="Garantías de compra">
+          <ul className="hero-trust" aria-label="Garantías de compra" data-hero-reveal>
             {HERO.trust.map((item) => (
               <li key={item}>✓ {item}</li>
             ))}

@@ -13,6 +13,7 @@ import {
   getInventoryStock,
   getOrderById,
   listInventory,
+  listStockAlerts,
   listOrders,
   listOrdersByBuyer,
   listPendingOrders,
@@ -636,6 +637,10 @@ app.all("*", async (context) => {
       return jsonResponse({ data: await listInventory() }, { origin });
     }
 
+    if (req.method === "GET" && url.pathname === "/inventory/alerts") {
+      return jsonResponse({ data: await listStockAlerts() }, { origin });
+    }
+
     if (req.method === "PATCH" && url.pathname.startsWith("/inventory/")) {
       const sku = decodeURIComponent(url.pathname.split("/").at(-1) || "");
       if (!sku) {
@@ -643,11 +648,14 @@ app.all("*", async (context) => {
       }
 
       const body = (await req.json()) as { stock?: number; minimumStock?: number };
-      if (typeof body.stock !== "number") {
-        return jsonResponse({ error: "Stock es requerido." }, { status: 400, origin });
+      if (!Number.isInteger(body.stock) || body.stock < 0) {
+        return jsonResponse({ error: "Stock debe ser un entero positivo." }, { status: 400, origin });
+      }
+      if (body.minimumStock !== undefined && (!Number.isInteger(body.minimumStock) || body.minimumStock < 0)) {
+        return jsonResponse({ error: "Stock mínimo debe ser un entero positivo." }, { status: 400, origin });
       }
 
-      await updateInventory({ sku, stock: body.stock, minimumStock: body.minimumStock ?? 0 });
+      await updateInventory({ sku, stock: body.stock, minimumStock: body.minimumStock });
       await recordAuditLog({ actor: "backoffice", action: "inventory.update", resource: sku, details: `stock=${body.stock}` });
       return jsonResponse({ ok: true }, { origin });
     }

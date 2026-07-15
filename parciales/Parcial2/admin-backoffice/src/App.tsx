@@ -27,6 +27,7 @@ type Product = {
   imageUrl: string;
   active: number;
   stock: number;
+  minimumStock: number;
   inventoryUpdatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -39,7 +40,10 @@ type ProductFormData = {
   tag: string;
   imageUrl: string;
   stock: string;
+  minimumStock: string;
 };
+
+type StockAlert = { sku: string; stock: number; minimumStock: number; deficit: number };
 
 // ============================================
 // CONSTANTS
@@ -61,6 +65,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   const storefrontUrl = useMemo(() => import.meta.env.VITE_STOREFRONT_URL ?? "http://localhost:3000", []);
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingOrder, setSavingOrder] = useState<string | null>(null);
@@ -77,26 +82,30 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
     tag: "",
     imageUrl: "",
     stock: "0",
+    minimumStock: "0",
   });
 
   const loadData = useCallback(async function loadData() {
     setLoading(true);
     setError(null);
     try {
-      const [ordersResponse, productsResponse] = await Promise.all([
+      const [ordersResponse, productsResponse, alertsResponse] = await Promise.all([
         fetch(`${apiBaseUrl}/orders`),
         fetch(`${apiBaseUrl}/products?includeInactive=true`),
+        fetch(`${apiBaseUrl}/inventory/alerts`),
       ]);
 
-      if (!ordersResponse.ok || !productsResponse.ok) {
+      if (!ordersResponse.ok || !productsResponse.ok || !alertsResponse.ok) {
         throw new Error("No se pudo cargar la información del backoffice.");
       }
 
       const ordersBody = (await ordersResponse.json()) as { data: Order[] };
       const productsBody = (await productsResponse.json()) as { data: Product[] };
+      const alertsBody = (await alertsResponse.json()) as { data: StockAlert[] };
 
       setOrders(ordersBody.data);
       setProducts(productsBody.data);
+      setStockAlerts(alertsBody.data);
     } catch (fetchError) {
       const message =
         fetchError instanceof Error
@@ -156,6 +165,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       tag: "",
       imageUrl: "",
       stock: "0",
+      minimumStock: "0",
     });
     setShowProductForm(true);
   }
@@ -169,6 +179,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       tag: product.tag,
       imageUrl: product.imageUrl,
       stock: product.stock.toString(),
+      minimumStock: product.minimumStock.toString(),
     });
     setShowProductForm(true);
   }
@@ -183,12 +194,14 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       tag: "",
       imageUrl: "",
       stock: "0",
+      minimumStock: "0",
     });
   }
 
   async function handleSaveProduct() {
     const price = parseFloat(productFormData.priceUsd);
     const stock = Number(productFormData.stock);
+    const minimumStock = Number(productFormData.minimumStock);
     if (isNaN(price) || price <= 0) {
       setError("El precio debe ser un número positivo.");
       return;
@@ -196,6 +209,11 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
 
     if (!Number.isInteger(stock) || stock < 0) {
       setError("El stock debe ser un número entero positivo.");
+      return;
+    }
+
+    if (!Number.isInteger(minimumStock) || minimumStock < 0) {
+      setError("El stock mínimo debe ser un número entero positivo.");
       return;
     }
 
@@ -240,7 +258,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
         const inventoryResponse = await fetch(`${apiBaseUrl}/inventory/${encodeURIComponent(savedProductId)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stock }),
+          body: JSON.stringify({ stock, minimumStock }),
         });
 
         if (!inventoryResponse.ok) {
@@ -331,6 +349,9 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
           <p>Gestión de órdenes, inventario y productos.</p>
         </div>
         <div className="topbar-actions">
+          <span className="stock-alert-badge" aria-label={`${stockAlerts.length} alertas de stock mínimo`}>
+            Stock bajo: {stockAlerts.length}
+          </span>
           <a className="button button-outline" href={storefrontUrl}>
             Ver tienda
           </a>
@@ -405,6 +426,9 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                       <p className="product-stock">
                         Stock: <strong>{product.stock}</strong>
                       </p>
+                      {product.stock < product.minimumStock ? (
+                        <span className="low-stock" role="status">Stock mínimo: {product.minimumStock}</span>
+                      ) : null}
                       <p className="product-description">{product.description}</p>
                       <div className="product-tags">
                         {product.tag && <span className="pill">{product.tag}</span>}
@@ -559,6 +583,19 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                   value={productFormData.stock}
                   onChange={(e) =>
                     setProductFormData({ ...productFormData, stock: e.target.value })
+                  }
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="product-minimum-stock">Stock mínimo</label>
+                <input
+                  id="product-minimum-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={productFormData.minimumStock}
+                  onChange={(e) =>
+                    setProductFormData({ ...productFormData, minimumStock: e.target.value })
                   }
                 />
               </div>
