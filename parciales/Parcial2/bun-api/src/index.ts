@@ -339,13 +339,20 @@ async function syncBuyerOrdersWithStripe(buyerId: string, buyerEmail?: string | 
           ? "cancelled"
           : "pending";
 
-    await upsertOrdersFromCheckoutSession({
-      session,
-      fallbackProductId: session.metadata?.productId ?? "unknown-product",
-      fallbackBuyerId: sessionBuyerId || buyerId,
-      fallbackBuyerEmail: sessionEmail || normalizedEmail,
-      status: syncedStatus,
-    });
+    try {
+      await upsertOrdersFromCheckoutSession({
+        session,
+        fallbackProductId: session.metadata?.productId ?? "unknown-product",
+        fallbackBuyerId: sessionBuyerId || buyerId,
+        fallbackBuyerEmail: sessionEmail || normalizedEmail,
+        status: syncedStatus,
+      });
+    } catch (error) {
+      // Una sesión histórica de Stripe puede no tener metadata de producto.
+      // No debe impedir que el cliente consulte las órdenes válidas ya persistidas.
+      const message = error instanceof Error ? error.message : "Unknown Stripe sync error";
+      console.warn(`[buyer-orders-sync] checkout ${session.id}: ${message}`);
+    }
   }
 }
 
