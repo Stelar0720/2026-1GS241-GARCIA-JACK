@@ -1,53 +1,87 @@
-# Deploy a Fly.io
+# Despliegue remoto — Railway + MongoDB Atlas
 
-Config lista en `fly.api.toml`, `fly.web.toml` y `fly.admin.toml`. Pasos manuales (requieren cuenta Fly.io propia):
+Validado el **14 de julio de 2026**.
 
-## 1. Instalar flyctl y loguearte
+## URLs de producción
 
-```bash
-# Windows (PowerShell)
-iwr https://fly.io/install.ps1 -useb | iex
+- Storefront: https://urbansprout-storefront-production.up.railway.app
+- Backoffice: https://urbansprout-backoffice-production.up.railway.app
+- API Bun/Hono: https://urbansprout-api-production.up.railway.app
+- Health: https://urbansprout-api-production.up.railway.app/health
+- GitHub Project: https://github.com/users/Stelar0720/projects/2
 
-fly auth signup   # o fly auth login si ya tenés cuenta
+## Arquitectura desplegada
+
+- Storefront: React 19 + Vite en Railway.
+- Backoffice: React 19 + Vite en Railway.
+- API: Bun + Hono en Railway, con autodeploy desde `main`.
+- Base de datos: MongoDB Atlas M0 (replica set y persistencia remota).
+- MCP: servidor `stdio` importable en Claude Code/Codex; consume la API pública y reenvía una key por rol.
+
+Root Directory del API:
+
+```text
+/parciales/Parcial2/bun-api
 ```
 
-## 2. Crear las apps (una vez)
+## Variables principales
 
-```bash
-cd parciales/Parcial2
-fly apps create urbansprout-api
-fly apps create urbansprout-web
-fly apps create urbansprout-admin   # opcional, si el free allowance alcanza
+API:
+
+```text
+MONGODB_URI=mongodb+srv://...
+MONGODB_DATABASE=urbansprout
+APP_URL=https://urbansprout-storefront-production.up.railway.app
+ALLOWED_ORIGINS=https://urbansprout-storefront-production.up.railway.app,https://urbansprout-backoffice-production.up.railway.app
+STRIPE_SECRET_KEY=...
+STRIPE_WEBHOOK_SECRET=...
+MCP_ADMIN_KEY=...
+MCP_SUPPORT_KEY=...
+MCP_CLIENT_KEY=...
 ```
 
-## 3. Volumen persistente para SQLite (solo la API lo necesita)
+Frontends:
 
-```bash
-fly volumes create urbansprout_data --app urbansprout-api --region iad --size 1
+```text
+VITE_API_URL=https://urbansprout-api-production.up.railway.app
+VITE_CLERK_PUBLISHABLE_KEY=...
+VITE_ADMIN_EMAILS=...
 ```
 
-## 4. Secrets (no van en los .toml, se cargan aparte)
+## Importar el MCP
 
-```bash
-fly secrets set STRIPE_SECRET_KEY=sk_... STRIPE_WEBHOOK_SECRET=whsec_... --app urbansprout-api
-# Keys del MCP (auth por rol). Generar valores aleatorios y guardarlos:
-fly secrets set MCP_ADMIN_KEY=... MCP_SUPPORT_KEY=... MCP_CLIENT_KEY=... --app urbansprout-api
-fly secrets set VITE_CLERK_PUBLISHABLE_KEY=pk_... ADMIN_EMAILS=admin@urbansprout.com --app urbansprout-web
-fly secrets set VITE_CLERK_PUBLISHABLE_KEY=pk_... --app urbansprout-admin
+```json
+{
+  "mcpServers": {
+    "urbansprout": {
+      "command": "bun",
+      "args": ["run", "start"],
+      "cwd": "parciales/Parcial2/mcp-server",
+      "env": {
+        "API_URL": "https://urbansprout-api-production.up.railway.app",
+        "MCP_API_KEY": "<MCP_ADMIN_KEY, MCP_SUPPORT_KEY o MCP_CLIENT_KEY>"
+      }
+    }
+  }
+}
 ```
 
-> El servidor MCP se conecta apuntando `API_URL` al `urbansprout-api` desplegado y usando una de esas keys en `MCP_API_KEY` (ver `mcp-server/README.md`).
+Validación MCP: 10 tools descubiertas, rol `admin` con 10 permisos y llamadas `search_products`/`get_role_permissions` exitosas.
 
-## 5. Deploy
+## Evidencia de smoke test
 
-```bash
-fly deploy --config fly.api.toml --app urbansprout-api
-fly deploy --config fly.web.toml --app urbansprout-web
-fly deploy --config fly.admin.toml --app urbansprout-admin   # opcional
+- Storefront, backoffice, `/health` y `/products`: HTTP 200.
+- Reinicio de API: 3 productos conservaron ID, fecha y stock.
+- Transacción Atlas + Stripe test: reserva `18 → 17`, orden `pending`, cancelación, orden `cancelled`, stock `17 → 18`.
+- Playwright: 26/26.
+- Repositorio Mongo: 8/8 pruebas y 32 assertions.
+- GitHub Actions: lint, builds y E2E en verde.
+
+## Redeploy y logs
+
+Los pushes a `main` despliegan automáticamente la API.
+
+```powershell
+railway service status --service urbansprout-api --json
+railway logs --service urbansprout-api --lines 100
 ```
-
-## Notas
-
-- Los Dockerfiles existentes corren en modo desarrollo (`bun run dev` / `npm run dev`). Funciona para este avance; migrar a build de producción queda como mejora futura.
-- Si el free allowance de la cuenta no alcanza para las 3 apps, priorizar `urbansprout-api` + `urbansprout-web` (el storefront funcionando es lo que pide la rúbrica); el backoffice puede quedar para acceso local en este avance.
-- `region = "iad"` (Ashburn, Virginia) por cercanía a Panamá (Fly retiró la región Miami); cambiarlo si Fly sugiere otra región más barata/disponible para la cuenta.
