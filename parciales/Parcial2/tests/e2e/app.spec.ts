@@ -52,6 +52,23 @@ test("carrito: se puede quitar un producto agregado", async ({ page }) => {
   // El dropdown del carrito se abre al agregar; quitamos con el botón de eliminar.
   await page.getByRole("button", { name: /Eliminar .* del carrito/ }).first().click();
   await expect(page.getByRole("button", { name: /Carrito con \d+ productos?/ })).toContainText("0");
+  await expect(page.getByRole("button", { name: "Deshacer" })).toBeVisible();
+  await page.getByRole("button", { name: "Deshacer" }).click();
+  await expect(page.getByRole("button", { name: /Carrito con \d+ productos?/ })).toContainText("1");
+});
+
+test("catálogo: activa VanillaTilt en las tres tarjetas", async ({ page }) => {
+  await page.goto("/");
+  const cards = page.locator("[data-tilt-card]");
+  await expect(cards).toHaveCount(3);
+  await expect(cards.first().locator(".js-tilt-glare")).toHaveCount(1);
+});
+
+test("experiencia: renderiza cursor personalizado y hero animable", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".cursor-dot")).toHaveCount(1);
+  await expect(page.locator(".cursor-ring")).toHaveCount(1);
+  await expect(page.locator("[data-hero-reveal]")).toHaveCount(5);
 });
 
 test("tema: el toggle claro/oscuro persiste tras recargar", async ({ page }) => {
@@ -65,6 +82,13 @@ test("tema: el toggle claro/oscuro persiste tras recargar", async ({ page }) => 
   await page.reload();
   const persistedTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   expect(persistedTheme).toBe(toggledTheme);
+});
+
+test("tema: usa la preferencia oscura del sistema cuando no hay valor guardado", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.addInitScript(() => window.localStorage.removeItem("urbansprout-theme"));
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
 });
 
 test("landing: muestra estadísticas, propuesta de valor y testimonios", async ({ page }) => {

@@ -79,6 +79,37 @@ body {
   position: relative;
 }
 
+@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  body,
+  a,
+  button {
+    cursor: none;
+  }
+}
+
+.custom-cursor {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+
+.cursor-dot,
+.cursor-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% -50%;
+  border-radius: 50%;
+}
+
+.cursor-dot { width: 7px; height: 7px; background: var(--primary); }
+.cursor-ring { width: 32px; height: 32px; border: 1px solid var(--primary); opacity: 0.7; }
+
+@media (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .custom-cursor { display: none; }
+}
+
 /* Malla de orbes de color detrás del vidrio */
 body::before {
   content: "";
@@ -259,16 +290,40 @@ a {
 }
 
 .cart-dropdown {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.6rem);
+  position: fixed;
+  right: 1rem;
+  top: 4.6rem;
   z-index: 40;
   width: min(380px, 90vw);
+  max-height: calc(100vh - 5.6rem);
+  overflow-y: auto;
   display: grid;
   gap: 0.85rem;
   border-radius: var(--radius);
   background: var(--glass-strong);
   padding: 1.1rem;
+}
+
+.undo-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--bg);
+  padding: 0.7rem 0.85rem;
+  box-shadow: var(--shadow);
+}
+
+.undo-toast button {
+  border: 0;
+  background: transparent;
+  color: var(--primary-2);
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .cart-dropdown-header {
