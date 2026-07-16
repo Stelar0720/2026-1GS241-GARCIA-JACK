@@ -1,5 +1,9 @@
 name: UrbanSprout CI
 
+concurrency:
+  group: urbansprout-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
@@ -19,6 +23,7 @@ defaults:
 jobs:
   lint-build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -40,14 +45,28 @@ jobs:
         run: bun install
         working-directory: parciales/Parcial2/bun-api
 
+      - name: Install MCP dependencies
+        run: bun install --frozen-lockfile
+        working-directory: parciales/Parcial2/mcp-server
+
+      - name: Prepare local env files
+        run: touch .env.local bun-api/.env
+
       - name: Lint
         run: npm run lint
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
 
       - name: Build
         run: npm run build
 
-      - name: Prepare local env file for bun-api
-        run: touch bun-api/.env
+      - name: Run unit tests (Bun + isolated MongoDB)
+        run: docker compose run --rm bun-api bun test src/db.test.ts
+
+      - name: Stop unit-test MongoDB
+        if: always()
+        run: docker compose down -v --remove-orphans
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

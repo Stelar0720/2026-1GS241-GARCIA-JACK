@@ -9,6 +9,8 @@
     "dev:admin": "kill-port 5173 && npm --prefix admin-backoffice run dev -- --host 0.0.0.0 --port 5173",
     "dev:api": "bun --env-file=bun-api/.env --watch bun-api/src/index.ts",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p admin-backoffice/tsconfig.app.json && tsc --noEmit -p admin-backoffice/tsconfig.node.json && bun x tsc --noEmit -p bun-api/tsconfig.json && bun x tsc --noEmit -p mcp-server/tsconfig.json",
+    "test:unit": "bun test bun-api/src/db.test.ts",
     "preview": "vite preview",
     "lint": "eslint",
     "test:e2e": "bun scripts/run-e2e.ts",
