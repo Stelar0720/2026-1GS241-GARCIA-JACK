@@ -13,6 +13,9 @@ export type PendingOrder = { checkoutSessionId: string; productId: string; buyer
 export type ProductInput = { name: string; description: string; priceUsd: number; tag: string; imageUrl: string };
 export type ProductRecord = ProductInput & { id: string; active: number; stock: number; minimumStock: number; inventoryUpdatedAt: string | null; createdAt: string; updatedAt: string };
 export type AuditLogEntry = { id: string; timestamp: string; actor: string; action: string; resource: string; details: string };
+export type AdminUserRole = "support" | "admin";
+export type AdminUserStatus = "invited" | "active" | "suspended";
+export type AdminUser = { id: string; name: string; email: string; role: AdminUserRole; status: AdminUserStatus; createdAt: string; updatedAt: string };
 export type SalesReport = {
   from: string | null; to: string | null; totalOrders: number; paidOrders: number;
   revenueTotalUsd: number; averageOrderValueUsd: number;
@@ -31,6 +34,7 @@ let inventory: Collection<InventoryDocument>;
 let products: Collection<ProductDocument>;
 let auditLogs: Collection<AuditLogEntry>;
 let processedStripeEvents: Collection<ProcessedStripeEvent>;
+let adminUsers: Collection<AdminUser>;
 
 const seedProducts: ProductDocument[] = [
   { id: "kit-balcon-basico", name: "Kit balcón básico", description: "Lechuga, cilantro y cebollín para espacios con 2-3 horas de luz.", priceUsd: 24.9, tag: "Inicio", imageUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop", active: 1, createdAt: "", updatedAt: "" },
@@ -44,11 +48,13 @@ async function initialize() {
   orders = db.collection<OrderDocument>("orders"); inventory = db.collection<InventoryDocument>("inventory");
   products = db.collection<ProductDocument>("products"); auditLogs = db.collection<AuditLogEntry>("audit_logs");
   processedStripeEvents = db.collection<ProcessedStripeEvent>("processed_stripe_events");
+  adminUsers = db.collection<AdminUser>("admin_users");
   await Promise.all([
     orders.createIndex({ checkoutSessionId: 1 }, { unique: true }), orders.createIndex({ buyerId: 1, createdAt: -1 }),
     orders.createIndex({ buyerEmail: 1, createdAt: -1 }), products.createIndex({ id: 1 }, { unique: true }),
     inventory.createIndex({ sku: 1 }, { unique: true }), auditLogs.createIndex({ timestamp: -1 }),
     processedStripeEvents.createIndex({ eventId: 1 }, { unique: true }),
+    adminUsers.createIndex({ email: 1 }, { unique: true }), adminUsers.createIndex({ name: "text", email: "text" }),
   ]);
   const now = new Date().toISOString();
   await Promise.all(seedProducts.flatMap((product, index) => [
@@ -154,6 +160,29 @@ export async function deleteProduct(productId: string) { await ready(); return (
 
 export async function recordAuditLog(params: { actor: string; action: string; resource: string; details?: string }) { await ready(); await auditLogs.insertOne({ id: randomUUID(), timestamp: new Date().toISOString(), actor: params.actor, action: params.action, resource: params.resource, details: params.details ?? "" }); }
 export async function queryAuditLogs(filters: { actor?: string; action?: string; from?: string; to?: string; limit?: number }): Promise<AuditLogEntry[]> { await ready(); const filter: Filter<AuditLogEntry> = {}; if (filters.actor) filter.actor = filters.actor; if (filters.action) filter.action = filters.action; if (filters.from || filters.to) filter.timestamp = { ...(filters.from ? { $gte: filters.from } : {}), ...(filters.to ? { $lte: filters.to } : {}) }; const limit = Math.max(1, Math.min(Math.floor(filters.limit ?? 100), 500)); return auditLogs.find(filter, { projection: { _id: 0 } }).sort({ timestamp: -1 }).limit(limit).toArray(); }
+
+export async function searchAdminUsers(query = ""): Promise<AdminUser[]> {
+  await ready();
+  const normalized = query.trim();
+  const filter: Filter<AdminUser> = normalized
+    ? { $or: [{ name: { $regex: normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" } }, { email: { $regex: normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" } }] }
+    : {};
+  return adminUsers.find(filter, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
+}
+
+export async function inviteAdminUser(params: { name: string; email: string; role: AdminUserRole }): Promise<AdminUser> {
+  await ready();
+  const now = new Date().toISOString();
+  const user: AdminUser = { id: randomUUID(), name: params.name.trim(), email: params.email.trim().toLowerCase(), role: params.role, status: "invited", createdAt: now, updatedAt: now };
+  await adminUsers.insertOne(user);
+  return user;
+}
+
+export async function updateAdminUser(userId: string, changes: { role?: AdminUserRole; status?: AdminUserStatus }): Promise<AdminUser | null> {
+  await ready();
+  await adminUsers.updateOne({ id: userId }, { $set: { ...changes, updatedAt: new Date().toISOString() } });
+  return adminUsers.findOne({ id: userId }, { projection: { _id: 0 } });
+}
 
 export async function generateSalesReport(filters: { from?: string; to?: string }): Promise<SalesReport> {
   await ready(); const dateFilter = { ...(filters.from ? { $gte: filters.from } : {}), ...(filters.to ? { $lte: filters.to } : {}) }; const base: Filter<OrderDocument> = (filters.from || filters.to) ? { createdAt: dateFilter } : {};

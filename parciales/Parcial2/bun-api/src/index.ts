@@ -9,11 +9,13 @@ import {
   createProduct,
   deleteProduct,
   generateSalesReport,
+  inviteAdminUser,
   getActiveProduct,
   getInventoryStock,
   getOrderById,
   listInventory,
   listStockAlerts,
+  searchAdminUsers,
   listOrders,
   listOrdersByBuyer,
   listPendingOrders,
@@ -26,6 +28,7 @@ import {
   updateInventory,
   updateOrderStatus,
   updateProduct,
+  updateAdminUser,
   upsertOrderFromCheckout,
   dbReady,
   processStripeEventAtomically,
@@ -40,6 +43,7 @@ import {
   roleHasPermission,
   ROLE_PERMISSIONS,
 } from "./auth";
+import type { AdminUserRole, AdminUserStatus } from "./db";
 import { apiConfig } from "./config";
 
 const port = apiConfig.port;
@@ -743,6 +747,56 @@ app.all("*", async (context) => {
         { role: body.role, permission: body.permission, allowed: roleHasPermission(body.role, body.permission) },
         { origin },
       );
+    }
+
+    if (url.pathname === "/admin/users" && req.method === "GET") {
+      const auth = authorize(req, "users:manage", origin);
+      if ("error" in auth) return auth.error;
+      return jsonResponse({ data: await searchAdminUsers(url.searchParams.get("q") ?? "") }, { origin });
+    }
+
+    if (url.pathname === "/admin/users/invite" && req.method === "POST") {
+      const auth = authorize(req, "users:manage", origin);
+      if ("error" in auth) return auth.error;
+      const body = (await req.json()) as { name?: string; email?: string; role?: AdminUserRole };
+      const name = body.name?.trim();
+      const email = body.email?.trim().toLowerCase();
+      if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return jsonResponse({ error: "Nombre y email válido son requeridos." }, { status: 400, origin });
+      }
+      if (body.role !== "support" && body.role !== "admin") {
+        return jsonResponse({ error: "El rol debe ser support o admin." }, { status: 400, origin });
+      }
+      try {
+        const user = await inviteAdminUser({ name, email, role: body.role });
+        await recordAuditLog({ actor: auth.role, action: "user.invite", resource: user.id, details: email });
+        return jsonResponse({ data: user }, { status: 201, origin });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("E11000")) {
+          return jsonResponse({ error: "Ya existe un usuario con ese email." }, { status: 409, origin });
+        }
+        throw error;
+      }
+    }
+
+    const adminUserMatch = url.pathname.match(/^\/admin\/users\/([^/]+)$/);
+    if (adminUserMatch && req.method === "PATCH") {
+      const auth = authorize(req, "users:manage", origin);
+      if ("error" in auth) return auth.error;
+      const body = (await req.json()) as { role?: AdminUserRole; status?: AdminUserStatus };
+      if (body.role !== undefined && body.role !== "support" && body.role !== "admin") {
+        return jsonResponse({ error: "Rol inválido." }, { status: 400, origin });
+      }
+      if (body.status !== undefined && !["invited", "active", "suspended"].includes(body.status)) {
+        return jsonResponse({ error: "Estado inválido." }, { status: 400, origin });
+      }
+      if (body.role === undefined && body.status === undefined) {
+        return jsonResponse({ error: "Envía role o status." }, { status: 400, origin });
+      }
+      const user = await updateAdminUser(decodeURIComponent(adminUserMatch[1]), body);
+      if (!user) return jsonResponse({ error: "Usuario no encontrado." }, { status: 404, origin });
+      await recordAuditLog({ actor: auth.role, action: body.status === "suspended" ? "user.suspend" : "user.update", resource: user.id, details: JSON.stringify(body) });
+      return jsonResponse({ data: user }, { origin });
     }
 
     // Reporte de ventas por período con desglose por producto (HU-067).

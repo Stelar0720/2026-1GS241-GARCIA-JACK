@@ -19,7 +19,8 @@ export type Permission =
   | "reports:read"
   | "export:read"
   | "audit:read"
-  | "auth:read";
+  | "auth:read"
+  | "users:manage";
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   public: [],
@@ -36,6 +37,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "export:read",
     "audit:read",
     "auth:read",
+    "users:manage",
   ],
 };
 

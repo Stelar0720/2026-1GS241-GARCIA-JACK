@@ -38,7 +38,7 @@ Como evidencia adicional, mostrar brevemente el **MCP** con la key de **admin**:
 ### 4. Cómo funciona por dentro (~30 s)
 - **React 19** en storefront y backoffice; estado de carrito en `localStorage`.
 - **Bun + Hono** sirven la API con **MongoDB Atlas**; transacciones de inventario y webhooks Stripe con firma y deduplicación persistente.
-- **MCP** (Model Context Protocol): 10 tools, cada una con un permiso; el servidor resuelve su rol vía `/auth/whoami` y el backend valida la API key (`Authorization: Bearer`).
+- **MCP** (Model Context Protocol): 11 tools, cada una con un permiso; el servidor resuelve su rol vía `/auth/whoami` y el backend valida la API key (`Authorization: Bearer`).
 - **QA**: 26 pruebas Playwright (storefront + backoffice + API), además de lint y build, integradas en **GitHub Actions**.
 
 ### 5. Cierre (~10 s)

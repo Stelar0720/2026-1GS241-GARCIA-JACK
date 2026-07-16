@@ -24,7 +24,8 @@ type Permission =
   | "reports:read"
   | "export:read"
   | "audit:read"
-  | "auth:read";
+  | "auth:read"
+  | "users:manage";
 
 let sessionRole = "public";
 let sessionPermissions: Permission[] = [];
@@ -377,6 +378,43 @@ server.registerTool(
     if (limit) params.set("limit", String(limit));
     const qs = params.toString();
     return textResult(await apiGet(`/audit-logs${qs ? `?${qs}` : ""}`));
+  },
+);
+
+// --- 11. manage_users (HU-051, users:manage) ---
+server.registerTool(
+  "manage_users",
+  {
+    title: "Gestionar usuarios administrativos",
+    description: "Busca, invita, cambia roles o suspende usuarios del equipo. Requiere users:manage (admin).",
+    inputSchema: {
+      action: z.enum(["search", "invite", "change-role", "suspend", "activate"]),
+      query: z.string().optional(),
+      userId: z.string().optional(),
+      name: z.string().optional(),
+      email: z.string().email().optional(),
+      role: z.enum(["support", "admin"]).optional(),
+    },
+  },
+  async (args) => {
+    const denied = denyIfMissing("users:manage");
+    if (denied) return denied;
+    if (args.action === "search") {
+      const params = new URLSearchParams();
+      if (args.query) params.set("q", args.query);
+      return textResult(await apiGet(`/admin/users?${params.toString()}`));
+    }
+    if (args.action === "invite") {
+      if (!args.name || !args.email || !args.role) return errorResult("invite requiere name, email y role.");
+      return textResult(await apiSend("POST", "/admin/users/invite", { name: args.name, email: args.email, role: args.role }));
+    }
+    if (!args.userId) return errorResult(`${args.action} requiere userId.`);
+    if (args.action === "change-role") {
+      if (!args.role) return errorResult("change-role requiere role.");
+      return textResult(await apiSend("PATCH", `/admin/users/${encodeURIComponent(args.userId)}`, { role: args.role }));
+    }
+    const status = args.action === "suspend" ? "suspended" : "active";
+    return textResult(await apiSend("PATCH", `/admin/users/${encodeURIComponent(args.userId)}`, { status }));
   },
 );
 

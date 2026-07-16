@@ -32,6 +32,34 @@ test("auth/roles: sin key rechaza con 401", async ({ request }) => {
   expect(response.status()).toBe(401);
 });
 
+test("usuarios admin: invita, busca, cambia rol y suspende con key admin", async ({ request }) => {
+  const headers = { Authorization: "Bearer e2e-admin-key" };
+  const email = `qa-${Date.now()}@urbansprout.test`;
+  const invited = await request.post(`${API_URL}/admin/users/invite`, {
+    headers,
+    data: { name: "QA Support", email, role: "support" },
+  });
+  expect(invited.status()).toBe(201);
+  const user = ((await invited.json()) as { data: { id: string } }).data;
+
+  const search = await request.get(`${API_URL}/admin/users?q=${encodeURIComponent(email)}`, { headers });
+  expect(search.status()).toBe(200);
+  expect(((await search.json()) as { data: unknown[] }).data).toHaveLength(1);
+
+  const promoted = await request.patch(`${API_URL}/admin/users/${user.id}`, { headers, data: { role: "admin" } });
+  expect(promoted.status()).toBe(200);
+  expect(((await promoted.json()) as { data: { role: string } }).data.role).toBe("admin");
+
+  const suspended = await request.patch(`${API_URL}/admin/users/${user.id}`, { headers, data: { status: "suspended" } });
+  expect(suspended.status()).toBe(200);
+  expect(((await suspended.json()) as { data: { status: string } }).data.status).toBe("suspended");
+});
+
+test("usuarios admin: rechaza gestión sin key admin", async ({ request }) => {
+  const response = await request.get(`${API_URL}/admin/users`);
+  expect(response.status()).toBe(401);
+});
+
 test("reports/sales: sin key rechaza con 401", async ({ request }) => {
   const response = await request.get(`${API_URL}/reports/sales`);
   expect(response.status()).toBe(401);

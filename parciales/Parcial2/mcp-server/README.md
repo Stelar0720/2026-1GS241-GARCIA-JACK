@@ -29,6 +29,7 @@ Las keys las define el `bun-api` por variables de entorno (`MCP_ADMIN_KEY`, `MCP
 | `export_data` | HU-064 | `export:read` | Exporta órdenes/productos/inventario CSV/JSON |
 | `generate_sales_report` | HU-067 | `reports:read` | Reporte de ventas por período |
 | `query_audit_logs` | HU-029 | `audit:read` | Consulta el log de auditoría |
+| `manage_users` | HU-051 | `users:manage` | Busca, invita, cambia roles y suspende usuarios administrativos |
 
 ## Correrlo
 
