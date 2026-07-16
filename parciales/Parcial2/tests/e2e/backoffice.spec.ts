@@ -61,4 +61,24 @@ test.describe("Backoffice admin", () => {
     await card.getByRole("button", { name: "Eliminar" }).click();
     await expect(page.getByRole("heading", { name: uniqueName })).toHaveCount(0, { timeout: 15_000 });
   });
+
+  test("gestiona invitación, rol y suspensión de un usuario", async ({ page }) => {
+    page.on("dialog", (dialog) => dialog.accept());
+    await page.goto(BACKOFFICE_URL);
+    await expect(page.getByText("Cargando datos del backoffice...")).toHaveCount(0, { timeout: 15_000 });
+
+    await page.getByLabel("Clave administrativa").fill("e2e-admin-key");
+    await page.getByRole("button", { name: "Validar clave" }).click();
+    const email = `panel-${Date.now()}@urbansprout.test`;
+    await page.getByLabel("Nombre del usuario").fill("Panel Support");
+    await page.getByLabel("Email del usuario").fill(email);
+    await page.getByRole("button", { name: "Invitar usuario" }).click();
+    await expect(page.getByText(email)).toBeVisible();
+
+    await page.getByLabel(`Rol de ${email}`).selectOption("admin");
+    await expect(page.getByLabel(`Rol de ${email}`)).toHaveValue("admin");
+    const userCard = page.locator(".user-card", { hasText: email });
+    await userCard.getByRole("button", { name: "Suspender" }).click();
+    await expect(userCard.getByText("suspended")).toBeVisible();
+  });
 });

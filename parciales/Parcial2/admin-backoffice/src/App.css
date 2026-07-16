@@ -69,6 +69,30 @@ body {
   font-weight: 700;
 }
 
+.admin-key-row,
+.user-invite-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.admin-key-row label { grid-column: 1 / -1; font-weight: 700; }
+.user-invite-form { grid-template-columns: 1fr 1.4fr auto auto; }
+.admin-key-row input, .user-invite-form input, .user-invite-form select, .user-search, .user-card select {
+  border: 1px solid #cbd5e1; border-radius: 0.5rem; padding: 0.65rem; background: white; color: #0f172a;
+}
+.user-search { width: 100%; margin-bottom: 1rem; }
+.users-list { display: grid; gap: 0.65rem; }
+.user-card { display: grid; grid-template-columns: 1fr auto auto; gap: 0.75rem; align-items: center; border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 0.8rem; }
+.user-card div { display: grid; gap: 0.2rem; }
+.user-card span, .user-card small { color: #475569; }
+
+@media (max-width: 760px) {
+  .admin-key-row, .user-invite-form, .user-card { grid-template-columns: 1fr; }
+}
+
 /* ============================================
    ERROR BANNER
    ============================================ */

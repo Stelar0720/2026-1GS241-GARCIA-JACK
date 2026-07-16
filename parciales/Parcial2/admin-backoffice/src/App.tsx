@@ -1,6 +1,7 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { AdminUsers } from "./AdminUsers";
 
 // ============================================
 // TYPES
@@ -504,6 +505,8 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
               )}
             </div>
           </section>
+
+          <AdminUsers apiBaseUrl={apiBaseUrl} />
 
         </>
       ) : null}
