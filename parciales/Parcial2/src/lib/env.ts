@@ -27,6 +27,16 @@ function normalizeUrl(value: string | undefined, fallback: string) {
   return raw;
 }
 
+export function validateStorefrontEnvironment() {
+  if (import.meta.env.VITE_E2E === "true" || !import.meta.env.PROD) return;
+  const required = ["VITE_API_URL", "VITE_CLERK_PUBLISHABLE_KEY"];
+  const missing = required.filter((name) => !getEnvAny([name])?.trim());
+  if (missing.length > 0) {
+    throw new Error(`[config] Faltan variables del storefront: ${missing.join(", ")}`);
+  }
+  normalizeUrl(getEnvAny(["VITE_API_URL"]), "");
+}
+
 export function isClerkConfigured() {
   return hasRealValue(
     getEnvAny([

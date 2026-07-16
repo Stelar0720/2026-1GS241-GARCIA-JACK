@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { validateBackofficeEnvironment } from "./env";
 
 function hasRealValue(value: string | undefined) {
   if (!value) return false;
@@ -25,6 +26,7 @@ function getEnvAny(keys: string[]) {
   return undefined;
 }
 
+validateBackofficeEnvironment();
 const clerkPublishableKey = getEnvAny([
   "VITE_CLERK_PUBLISHABLE_KEY",
   "REACT_PUBLIC_CLERK_PUBLISHABLE_KEY",
