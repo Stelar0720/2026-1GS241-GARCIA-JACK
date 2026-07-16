@@ -10,6 +10,16 @@ Validado el **14 de julio de 2026**.
 - Health: https://urbansprout-api-production.up.railway.app/health
 - GitHub Project: https://github.com/users/Stelar0720/projects/2
 
+## URLs de staging
+
+- Storefront: https://urbansprout-storefront-staging.up.railway.app
+- Backoffice: https://urbansprout-backoffice-staging.up.railway.app
+- API health: https://urbansprout-api-staging.up.railway.app/health
+
+`main` despliega automáticamente a staging únicamente después de que `UrbanSprout CI` termina correctamente. Railway espera los check suites requeridos antes de construir.
+
+Producción sigue la rama `production`. Para promover una versión, se ejecuta manualmente `UrbanSprout CD` desde GitHub Actions, se escribe `DEPLOY` y el propietario debe aprobar el environment protegido `production`. El workflow promueve el mismo commit probado, ejecuta smoke tests y crea un GitHub Release con tag y changelog automáticos.
+
 ## Arquitectura desplegada
 
 - Storefront: React 19 + Vite en Railway.
