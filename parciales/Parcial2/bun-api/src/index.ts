@@ -40,13 +40,11 @@ import {
   roleHasPermission,
   ROLE_PERMISSIONS,
 } from "./auth";
+import { apiConfig } from "./config";
 
-const port = Number(process.env.PORT || process.env.API_PORT || 4000);
+const port = apiConfig.port;
 const uploadsDir = join(process.cwd(), "public", "uploads");
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const allowedOrigins = apiConfig.allowedOrigins;
 
 if (!existsSync(uploadsDir)) {
   mkdirSync(uploadsDir, { recursive: true });
@@ -524,7 +522,7 @@ app.all("*", async (context) => {
       }
       const checkoutLines = parsedLines.data;
 
-      const storefrontUrl = process.env.APP_URL?.trim() || "http://localhost:3000";
+      const storefrontUrl = apiConfig.appUrl;
       const normalizedEmail = body.userEmail?.trim().toLowerCase() || undefined;
       const buyerId = body.userId?.trim() || `guest-${Date.now()}`;
       const cartItems = checkoutLines.map((line) => ({

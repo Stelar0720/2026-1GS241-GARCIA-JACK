@@ -36,6 +36,12 @@ Root Directory del API:
 
 ## Variables principales
 
+La configuración esperada está documentada por ambiente en
+`.env.development.example`, `.env.staging.example` y `.env.production.example`.
+Estas plantillas no contienen credenciales: Railway y GitHub Actions inyectan
+los valores reales. API, frontends y MCP validan al arrancar las variables
+obligatorias de staging/production.
+
 API:
 
 ```text

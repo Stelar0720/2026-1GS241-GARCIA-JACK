@@ -69,6 +69,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Validate environment configuration
+        run: bun test src/config.test.ts
+        working-directory: parciales/Parcial2/bun-api
+
       - name: Run unit tests (Bun + isolated MongoDB)
         run: docker compose run --rm bun-api bun test src/db.test.ts
 

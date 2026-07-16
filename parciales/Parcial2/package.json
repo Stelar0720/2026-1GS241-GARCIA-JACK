@@ -10,7 +10,7 @@
     "dev:api": "bun --env-file=bun-api/.env --watch bun-api/src/index.ts",
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p admin-backoffice/tsconfig.app.json && tsc --noEmit -p admin-backoffice/tsconfig.node.json && bun x tsc --noEmit -p bun-api/tsconfig.json && bun x tsc --noEmit -p mcp-server/tsconfig.json",
-    "test:unit": "bun test bun-api/src/db.test.ts",
+    "test:unit": "bun test bun-api/src/config.test.ts bun-api/src/db.test.ts",
     "preview": "vite preview",
     "lint": "eslint",
     "test:e2e": "bun scripts/run-e2e.ts",

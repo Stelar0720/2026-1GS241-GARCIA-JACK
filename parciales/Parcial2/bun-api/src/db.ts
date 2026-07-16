@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { MongoClient, MongoServerError, type ClientSession, type Collection, type Db, type Filter } from "mongodb";
+import { apiConfig } from "./config";
 
-const mongoUri = process.env.MONGODB_URI?.trim() || "mongodb://127.0.0.1:27017";
-const mongoDatabase = process.env.MONGODB_DATABASE?.trim() || "urbansprout";
+const mongoUri = apiConfig.mongoUri;
+const mongoDatabase = apiConfig.mongoDatabase;
 
 const client = new MongoClient(mongoUri);
 export let db: Db;

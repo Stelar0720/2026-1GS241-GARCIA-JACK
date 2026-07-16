@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { mcpConfig } from "./config.js";
 
 // ============================================================
 // Configuración y autenticación
@@ -10,8 +11,8 @@ import { z } from "zod";
 // cada tool se habilita/deshabilita según el permiso requerido. Las tools que
 // llegan al backend reenvían la key como `Authorization: Bearer`.
 
-const API_URL = process.env.API_URL?.trim() || "http://localhost:4000";
-const API_KEY = process.env.MCP_API_KEY?.trim() || "";
+const API_URL = mcpConfig.apiUrl;
+const API_KEY = mcpConfig.apiKey;
 
 type Permission =
   | "catalog:read"
