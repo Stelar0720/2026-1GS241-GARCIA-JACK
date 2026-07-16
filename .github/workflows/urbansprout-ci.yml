@@ -54,15 +54,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Prepare local env files
+        run: touch .env.local bun-api/.env
+
       - name: Run unit tests (Bun + isolated MongoDB)
         run: docker compose run --rm bun-api bun test src/db.test.ts
 
       - name: Stop unit-test MongoDB
         if: always()
         run: docker compose down -v --remove-orphans
-
-      - name: Prepare local env file for bun-api
-        run: touch bun-api/.env
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
