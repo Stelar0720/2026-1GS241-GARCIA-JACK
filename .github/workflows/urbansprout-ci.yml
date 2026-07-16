@@ -6,15 +6,17 @@ concurrency:
 
 on:
   push:
-    branches: [main]
+    branches: [main, production]
     paths:
       - "parciales/Parcial2/**"
       - ".github/workflows/urbansprout-ci.yml"
+      - ".github/workflows/urbansprout-cd.yml"
   pull_request:
     branches: [main]
     paths:
       - "parciales/Parcial2/**"
       - ".github/workflows/urbansprout-ci.yml"
+      - ".github/workflows/urbansprout-cd.yml"
 
 defaults:
   run:
