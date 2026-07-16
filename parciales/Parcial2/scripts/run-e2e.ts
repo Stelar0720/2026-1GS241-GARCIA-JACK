@@ -20,7 +20,7 @@ await run(["docker", "compose", "-f", composeFile, "down", "-v", "--remove-orpha
 try {
   await run(["docker", "compose", "-f", composeFile, "up", "-d", "--wait", "mongo-e2e"]);
   await run(["docker", "compose", "-f", composeFile, "run", "--rm", "mongo-e2e-init"]);
-  const exitCode = await run(["bun", "x", "playwright", "test"], true);
+  const exitCode = await run(["bun", "x", "playwright", "test", ...Bun.argv.slice(2)], true);
   if (exitCode !== 0) process.exitCode = exitCode;
 } finally {
   await run(["docker", "compose", "-f", composeFile, "down", "-v", "--remove-orphans"], true);
