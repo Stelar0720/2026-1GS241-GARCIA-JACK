@@ -9,12 +9,18 @@ on:
     branches: [main, production]
     paths:
       - "parciales/Parcial2/**"
+      - "Dockerfile.storefront"
+      - "Dockerfile.backoffice"
+      - ".dockerignore"
       - ".github/workflows/urbansprout-ci.yml"
       - ".github/workflows/urbansprout-cd.yml"
   pull_request:
     branches: [main]
     paths:
       - "parciales/Parcial2/**"
+      - "Dockerfile.storefront"
+      - "Dockerfile.backoffice"
+      - ".dockerignore"
       - ".github/workflows/urbansprout-ci.yml"
       - ".github/workflows/urbansprout-cd.yml"
 
