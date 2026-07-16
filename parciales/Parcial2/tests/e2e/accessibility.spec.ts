@@ -51,3 +51,23 @@ for (const route of routes) {
     expect(blocking, `Regresiones de accesibilidad bloqueantes en ${route.name}`).toEqual([]);
   });
 }
+
+test("accesibilidad: navegación principal funciona con teclado y Escape", async ({ page }) => {
+  await page.goto("/");
+  await page.keyboard.press("Tab");
+  await expect(page.locator(":focus")).toBeVisible();
+  const cart = page.getByRole("button", { name: /Carrito con/ });
+  await cart.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Resumen del carrito" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Resumen del carrito" })).toHaveCount(0);
+  await expect(cart).toBeFocused();
+});
+
+test("accesibilidad: todas las imágenes visibles tienen texto alternativo", async ({ page }) => {
+  for (const url of ["/", "/producto/kit-balcon-basico", "http://localhost:5173"]) {
+    await page.goto(url);
+    expect(await page.locator("img:not([alt])").count(), `Imagen sin alt en ${url}`).toBe(0);
+  }
+});

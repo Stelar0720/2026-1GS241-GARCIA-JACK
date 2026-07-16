@@ -27,6 +27,12 @@ test("auth/whoami: sin key resuelve rol público", async ({ request }) => {
   expect(body.permissions).toEqual([]);
 });
 
+test("auth/whoami: la key CI solo obtiene permiso de QA", async ({ request }) => {
+  const response = await request.get(`${API_URL}/auth/whoami`, { headers: { Authorization: "Bearer e2e-ci-key" } });
+  expect(response.ok()).toBeTruthy();
+  expect(await response.json()).toEqual({ role: "ci", permissions: ["qa:run"] });
+});
+
 test("auth/roles: sin key rechaza con 401", async ({ request }) => {
   const response = await request.get(`${API_URL}/auth/roles`);
   expect(response.status()).toBe(401);

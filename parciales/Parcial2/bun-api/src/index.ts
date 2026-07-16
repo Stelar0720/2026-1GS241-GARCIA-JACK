@@ -44,6 +44,7 @@ import {
   ROLE_PERMISSIONS,
 } from "./auth";
 import type { AdminUserRole, AdminUserStatus } from "./db";
+import { calculateLineAmountUsd, canReserveStock, normalizeCheckoutLines, validateProductInput, type CheckoutLineInput } from "./business";
 import { apiConfig } from "./config";
 
 const port = apiConfig.port;
@@ -139,35 +140,6 @@ const stripeClient = stripeSecretKey
   ? new Stripe(stripeSecretKey, { apiVersion: "2026-04-22.dahlia" })
   : null;
 
-function readProductInput(body: Partial<ProductInput>) {
-  const name = body.name?.trim();
-  const description = body.description?.trim();
-  const priceUsd = Number(body.priceUsd);
-  const tag = body.tag?.trim() ?? "";
-  const imageUrl = body.imageUrl?.trim() ?? "";
-
-  if (!name) return { error: "El nombre del producto es requerido." };
-  if (!description) return { error: "La descripción del producto es requerida." };
-  if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
-    return { error: "El precio debe ser un número positivo." };
-  }
-
-  return {
-    data: {
-      name,
-      description,
-      priceUsd,
-      tag,
-      imageUrl,
-    },
-  };
-}
-
-type CheckoutLineInput = {
-  productId: string;
-  quantity: number;
-};
-
 type CheckoutLine = {
   product: ProductRecord;
   quantity: number;
@@ -176,31 +148,6 @@ type CheckoutLine = {
 
 function getCheckoutOrderId(sessionId: string, productId: string) {
   return `${sessionId}:${productId}`;
-}
-
-function normalizeCheckoutLines(body: {
-  productId?: string;
-  items?: { productId?: string; quantity?: number }[];
-}) {
-  const rawItems =
-    Array.isArray(body.items) && body.items.length > 0
-      ? body.items
-      : body.productId
-        ? [{ productId: body.productId, quantity: 1 }]
-        : [];
-
-  const quantitiesByProduct = new Map<string, number>();
-  for (const item of rawItems) {
-    const productId = item.productId?.trim();
-    if (!productId) continue;
-
-    const quantity = Math.max(1, Math.floor(Number(item.quantity) || 1));
-    quantitiesByProduct.set(productId, (quantitiesByProduct.get(productId) ?? 0) + quantity);
-  }
-
-  return [...quantitiesByProduct.entries()].map(
-    ([productId, quantity]): CheckoutLineInput => ({ productId, quantity }),
-  );
 }
 
 async function buildCheckoutLines(items: CheckoutLineInput[]) {
@@ -212,14 +159,14 @@ async function buildCheckoutLines(items: CheckoutLineInput[]) {
       return { error: "Uno de los productos del carrito no es vÃ¡lido." };
     }
 
-    if ((await getInventoryStock(product.id)) < item.quantity) {
+    if (!canReserveStock(await getInventoryStock(product.id), item.quantity)) {
       return { error: `${product.name} no tiene stock suficiente.` };
     }
 
     lines.push({
       product,
       quantity: item.quantity,
-      amountUsd: product.priceUsd * item.quantity,
+      amountUsd: calculateLineAmountUsd(product.priceUsd, item.quantity),
     });
   }
 
@@ -463,7 +410,7 @@ app.all("*", async (context) => {
     }
 
     if (req.method === "POST" && url.pathname === "/products") {
-      const parsed = readProductInput((await req.json()) as Partial<ProductInput>);
+      const parsed = validateProductInput((await req.json()) as Partial<ProductInput>);
       if ("error" in parsed) {
         return jsonResponse({ error: parsed.error }, { status: 400, origin });
       }
@@ -480,7 +427,7 @@ app.all("*", async (context) => {
       }
 
       if (req.method === "PATCH") {
-        const parsed = readProductInput((await req.json()) as Partial<ProductInput>);
+        const parsed = validateProductInput((await req.json()) as Partial<ProductInput>);
         if ("error" in parsed) {
           return jsonResponse({ error: parsed.error }, { status: 400, origin });
         }

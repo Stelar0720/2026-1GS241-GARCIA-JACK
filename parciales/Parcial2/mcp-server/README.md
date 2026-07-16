@@ -12,6 +12,7 @@ El servidor se lanza con una API key (`MCP_API_KEY`) que lo identifica ante el `
 | `client` | `MCP_CLIENT_KEY` | `orders:cancel` + búsqueda |
 | `support` | `MCP_SUPPORT_KEY` | `catalog:read`, `orders:read`, `auth:read` |
 | `admin` | `MCP_ADMIN_KEY` | todos |
+| `ci` | `MCP_CI_KEY` | ejecución de suites QA |
 
 Las keys las define el `bun-api` por variables de entorno (`MCP_ADMIN_KEY`, `MCP_SUPPORT_KEY`, `MCP_CLIENT_KEY`). El servidor MCP se lanza con **una** de esas keys en `MCP_API_KEY`.
 
@@ -30,6 +31,9 @@ Las keys las define el `bun-api` por variables de entorno (`MCP_ADMIN_KEY`, `MCP
 | `generate_sales_report` | HU-067 | `reports:read` | Reporte de ventas por período |
 | `query_audit_logs` | HU-029 | `audit:read` | Consulta el log de auditoría |
 | `manage_users` | HU-051 | `users:manage` | Busca, invita, cambia roles y suspende usuarios administrativos |
+| `run_unit_tests` | HU-042 | `qa:run` | Ejecuta tests unitarios puros con cobertura |
+| `run_integration_tests` | HU-043 | `qa:run` | Ejecuta integración E2E con MongoDB aislada |
+| `run_accessibility_audit` | HU-061 | `qa:run` | Ejecuta aXe WCAG 2.1 AA |
 
 ## Correrlo
 

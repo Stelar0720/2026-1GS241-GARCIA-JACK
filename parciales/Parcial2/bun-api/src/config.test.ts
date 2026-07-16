@@ -12,6 +12,7 @@ const production = {
   MCP_ADMIN_KEY: "admin-value",
   MCP_SUPPORT_KEY: "support-value",
   MCP_CLIENT_KEY: "client-value",
+  MCP_CI_KEY: "ci-value",
 };
 
 describe("validateApiEnvironment", () => {

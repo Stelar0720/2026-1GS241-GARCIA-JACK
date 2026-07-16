@@ -29,6 +29,7 @@ export default defineConfig({
         MCP_ADMIN_KEY: "e2e-admin-key",
         MCP_SUPPORT_KEY: "e2e-support-key",
         MCP_CLIENT_KEY: "e2e-client-key",
+        MCP_CI_KEY: "e2e-ci-key",
       },
       reuseExistingServer: false,
       timeout: 120_000,
