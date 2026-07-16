@@ -655,15 +655,16 @@ app.all("*", async (context) => {
       }
 
       const body = (await req.json()) as { stock?: number; minimumStock?: number };
-      if (!Number.isInteger(body.stock) || body.stock < 0) {
+      const stock = body.stock;
+      if (typeof stock !== "number" || !Number.isInteger(stock) || stock < 0) {
         return jsonResponse({ error: "Stock debe ser un entero positivo." }, { status: 400, origin });
       }
       if (body.minimumStock !== undefined && (!Number.isInteger(body.minimumStock) || body.minimumStock < 0)) {
         return jsonResponse({ error: "Stock mínimo debe ser un entero positivo." }, { status: 400, origin });
       }
 
-      await updateInventory({ sku, stock: body.stock, minimumStock: body.minimumStock });
-      await recordAuditLog({ actor: "backoffice", action: "inventory.update", resource: sku, details: `stock=${body.stock}` });
+      await updateInventory({ sku, stock, minimumStock: body.minimumStock });
+      await recordAuditLog({ actor: "backoffice", action: "inventory.update", resource: sku, details: `stock=${stock}` });
       return jsonResponse({ ok: true }, { origin });
     }
 
