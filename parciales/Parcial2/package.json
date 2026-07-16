@@ -10,7 +10,9 @@
     "dev:api": "bun --env-file=bun-api/.env --watch bun-api/src/index.ts",
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p admin-backoffice/tsconfig.app.json && tsc --noEmit -p admin-backoffice/tsconfig.node.json && bun x tsc --noEmit -p bun-api/tsconfig.json && bun x tsc --noEmit -p mcp-server/tsconfig.json",
-    "test:unit": "bun test bun-api/src/config.test.ts bun-api/src/db.test.ts",
+    "test:unit": "bun test bun-api/src/business.test.ts bun-api/src/config.test.ts bun-api/src/db.test.ts",
+    "test:unit:pure": "bun test bun-api/src/business.test.ts --coverage",
+    "test:components": "vitest run",
     "preview": "vite preview",
     "lint": "eslint",
     "test:e2e": "bun scripts/run-e2e.ts",
@@ -33,6 +35,9 @@
     "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.59.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -42,9 +47,11 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "jsdom": "^29.1.1",
     "kill-port": "^2.0.1",
     "typescript": "^5",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vitest": "^4.1.10"
   }
 }

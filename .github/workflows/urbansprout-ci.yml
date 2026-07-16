@@ -73,6 +73,13 @@ jobs:
         run: bun test src/config.test.ts
         working-directory: parciales/Parcial2/bun-api
 
+      - name: Run pure unit tests with coverage
+        run: bun test src/business.test.ts --coverage --coverage-reporter=lcov
+        working-directory: parciales/Parcial2/bun-api
+
+      - name: Run React component tests
+        run: npm run test:components
+
       - name: Run unit tests (Bun + isolated MongoDB)
         run: docker compose run --rm bun-api bun test src/db.test.ts
 

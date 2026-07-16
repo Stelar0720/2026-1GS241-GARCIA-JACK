@@ -1,6 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import { mcpConfig } from "./config.js";
 
 // ============================================================
@@ -25,13 +28,28 @@ type Permission =
   | "export:read"
   | "audit:read"
   | "auth:read"
-  | "users:manage";
+  | "users:manage"
+  | "qa:run";
 
 let sessionRole = "public";
 let sessionPermissions: Permission[] = [];
 
 function authHeaders(): Record<string, string> {
   return API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {};
+}
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+async function runQaCommand(command: string[]) {
+  const executable = process.platform === "win32" && command[0] === "npm" ? "npm.cmd" : command[0];
+  return new Promise<{ passed: boolean; exitCode: number; output: string }>((resolveResult) => {
+    const child = spawn(executable, command.slice(1), { cwd: projectRoot, env: { ...process.env } });
+    let output = "";
+    child.stdout.on("data", (chunk) => { output += String(chunk); });
+    child.stderr.on("data", (chunk) => { output += String(chunk); });
+    child.on("error", (error) => resolveResult({ passed: false, exitCode: -1, output: error.message }));
+    child.on("close", (code) => resolveResult({ passed: code === 0, exitCode: code ?? -1, output: output.trim().slice(-12_000) }));
+  });
 }
 
 async function loadSession() {
@@ -169,7 +187,7 @@ server.registerTool(
     description:
       "Valida si un rol tiene un permiso específico antes de ejecutar una acción (HU-025). Requiere auth:read.",
     inputSchema: {
-      role: z.enum(["public", "client", "support", "admin"]),
+      role: z.enum(["public", "client", "support", "admin", "ci"]),
       permission: z.string(),
     },
   },
@@ -417,6 +435,21 @@ server.registerTool(
     return textResult(await apiSend("PATCH", `/admin/users/${encodeURIComponent(args.userId)}`, { status }));
   },
 );
+
+server.registerTool("run_unit_tests", { title: "Ejecutar tests unitarios", description: "Ejecuta lógica pura con reporte de cobertura. Requiere qa:run.", inputSchema: {} }, async () => {
+  const denied = denyIfMissing("qa:run"); if (denied) return denied;
+  return textResult(await runQaCommand(["bun", "test", "bun-api/src/business.test.ts", "--coverage"]));
+});
+
+server.registerTool("run_integration_tests", { title: "Ejecutar tests de integración", description: "Ejecuta Playwright contra API y MongoDB aislada. Requiere qa:run.", inputSchema: {} }, async () => {
+  const denied = denyIfMissing("qa:run"); if (denied) return denied;
+  return textResult(await runQaCommand(["npm", "run", "test:e2e"]));
+});
+
+server.registerTool("run_accessibility_audit", { title: "Auditar accesibilidad", description: "Ejecuta aXe WCAG 2.1 AA en rutas principales. Requiere qa:run.", inputSchema: {} }, async () => {
+  const denied = denyIfMissing("qa:run"); if (denied) return denied;
+  return textResult(await runQaCommand(["npm", "run", "test:a11y"]));
+});
 
 await loadSession();
 const transport = new StdioServerTransport();

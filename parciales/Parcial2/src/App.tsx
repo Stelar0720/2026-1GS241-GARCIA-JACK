@@ -133,7 +133,7 @@ function ExperienceEffects() {
   return <div className="custom-cursor" aria-hidden="true"><span className="cursor-dot" /><span className="cursor-ring" /></div>;
 }
 
-function ProductCard({ children, className }: { children: React.ReactNode; className: string }) {
+export function ProductCard({ children, className }: { children: React.ReactNode; className: string }) {
   const cardRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const card = cardRef.current;
@@ -371,7 +371,7 @@ function useStorefrontCart(userId: string | null, userEmail: string | null): Sto
   };
 }
 
-function CartDropdown({
+export function CartDropdown({
   cartLines,
   cartCount,
   cartTotal,

@@ -39,6 +39,7 @@ export function validateApiEnvironment(source: EnvironmentSource = process.env) 
         "MCP_ADMIN_KEY",
         "MCP_SUPPORT_KEY",
         "MCP_CLIENT_KEY",
+        "MCP_CI_KEY",
       ]
     : [];
   const missing = required(source, requiredNames);

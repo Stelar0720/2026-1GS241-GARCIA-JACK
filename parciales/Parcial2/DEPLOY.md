@@ -82,7 +82,7 @@ VITE_ADMIN_EMAILS=...
 }
 ```
 
-Validación MCP: 11 tools descubiertas, incluyendo `manage_users`; el rol `admin` puede gestionar el equipo y las llamadas siguen autenticadas por API key.
+Validación MCP: 14 tools descubiertas. `manage_users` usa rol admin y las suites `run_unit_tests`, `run_integration_tests` y `run_accessibility_audit` usan la key CI con permiso `qa:run`.
 
 ## Evidencia de smoke test
 
