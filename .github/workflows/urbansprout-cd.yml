@@ -35,9 +35,29 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli
+
+      - name: Deploy all services to Railway staging
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        shell: bash
+        run: |
+          project="8d2bf25d-6881-4ddc-b930-a4dab99773bb"
+          railway up ./parciales/Parcial2 --path-as-root --detach --yes \
+            --project "$project" --environment staging --service urbansprout-storefront \
+            --message "staging ${GITHUB_SHA}"
+          railway up ./parciales/Parcial2 --path-as-root --detach --yes \
+            --project "$project" --environment staging --service urbansprout-backoffice \
+            --message "staging ${GITHUB_SHA}"
+          railway up ./parciales/Parcial2/bun-api --path-as-root --detach --yes \
+            --project "$project" --environment staging --service urbansprout-api \
+            --message "staging ${GITHUB_SHA}"
+
       - name: Wait for Railway staging
         shell: bash
         run: |
+          sleep 30
           urls=(
             "https://urbansprout-storefront-staging.up.railway.app"
             "https://urbansprout-backoffice-staging.up.railway.app"
