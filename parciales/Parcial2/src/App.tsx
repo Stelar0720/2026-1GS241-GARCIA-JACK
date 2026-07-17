@@ -24,6 +24,7 @@ import { DevolucionesPage, PrivacidadPage, TerminosPage } from "@/pages/legal";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { NetworkStatus, NotFoundPage } from "@/components/system-status";
 import { WishlistButton, WishlistPanel } from "@/components/commerce";
+import { PrivacyTools } from "@/components/privacy-tools";
 import { commerceApi } from "@/lib/commerce";
 
 type PurchaseStatus = "pending" | "paid" | "cancelled";
@@ -934,6 +935,7 @@ function CustomerDashboardPage() {
         ) : null}
       </section>
       <WishlistPanel products={products} />
+      <PrivacyTools />
 
       <section className="panel stack">
         <h2 className="compact-title">Mis accesos</h2>

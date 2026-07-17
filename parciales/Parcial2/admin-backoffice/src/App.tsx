@@ -2,6 +2,7 @@ import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-reac
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { AdminUsers } from "./AdminUsers";
+import { DataSecurityPanel } from "./DataSecurityPanel";
 import { getApiErrorMessage, type ApiErrorBody } from "./api-error";
 
 // ============================================
@@ -549,6 +550,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
           </section>
 
           <AdminUsers apiBaseUrl={apiBaseUrl} />
+          <DataSecurityPanel apiBaseUrl={apiBaseUrl} />
 
         </>
       ) : null}

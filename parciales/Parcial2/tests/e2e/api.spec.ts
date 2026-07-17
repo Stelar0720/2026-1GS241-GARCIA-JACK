@@ -143,3 +143,48 @@ test("reviews are public but creation requires a verified purchase", async ({ re
   });
   expect(rejected.status()).toBe(403);
 });
+
+test("API keys: create, authenticate, rotate and revoke without exposing hashes", async ({ request }) => {
+  const adminHeaders = { Authorization: "Bearer e2e-admin-key" };
+  const created = await request.post(`${API_URL}/admin/api-keys`, { headers: adminHeaders, data: { name: `QA integration ${Date.now()}`, permissions: ["catalog:read"], expiresAt: null } });
+  expect(created.status()).toBe(201);
+  const createdBody = (await created.json()) as { data: { id: string; secretHash?: string }; token: string };
+  expect(createdBody.token).toMatch(/^usk_/);
+  expect(createdBody.data.secretHash).toBeUndefined();
+  expect((await request.get(`${API_URL}/integrations/catalog`, { headers: { Authorization: `Bearer ${createdBody.token}` } })).status()).toBe(200);
+
+  const rotated = await request.post(`${API_URL}/admin/api-keys/${createdBody.data.id}/rotate`, { headers: adminHeaders });
+  expect(rotated.status()).toBe(200);
+  const rotatedBody = (await rotated.json()) as { data: { id: string }; token: string };
+  expect((await request.get(`${API_URL}/integrations/catalog`, { headers: { Authorization: `Bearer ${createdBody.token}` } })).status()).toBe(401);
+  expect((await request.get(`${API_URL}/integrations/catalog`, { headers: { Authorization: `Bearer ${rotatedBody.token}` } })).status()).toBe(200);
+  expect((await request.post(`${API_URL}/admin/api-keys/${rotatedBody.data.id}/revoke`, { headers: adminHeaders })).status()).toBe(200);
+  expect((await request.get(`${API_URL}/integrations/catalog`, { headers: { Authorization: `Bearer ${rotatedBody.token}` } })).status()).toBe(401);
+});
+
+test("data operations: migrations and confirmed backups are admin-only", async ({ request }) => {
+  const headers = { Authorization: "Bearer e2e-admin-key" };
+  const migrations = await request.get(`${API_URL}/admin/migrations`, { headers });
+  expect(migrations.status()).toBe(200);
+  expect(((await migrations.json()) as { data: { applied: boolean }[] }).data.every((item) => item.applied)).toBe(true);
+  const backup = await request.post(`${API_URL}/admin/backups`, { headers });
+  expect(backup.status()).toBe(201);
+  const id = ((await backup.json()) as { data: { id: string } }).data.id;
+  expect((await request.post(`${API_URL}/admin/backups/${id}/restore`, { headers, data: { confirmation: "WRONG" } })).status()).toBe(400);
+  expect((await request.get(`${API_URL}/admin/backups`)).status()).toBe(401);
+});
+
+test("GDPR: exports personal data and deletes it with explicit confirmation", async ({ request }) => {
+  const customerId = `gdpr-${Date.now()}`;
+  const headers = { Authorization: "Bearer e2e-client-key", "X-Customer-Id": customerId };
+  const products = await request.get(`${API_URL}/products`);
+  const productId = ((await products.json()) as { data: { id: string }[] }).data[0].id;
+  await request.post(`${API_URL}/wishlist/${productId}`, { headers });
+  const exported = await request.get(`${API_URL}/me/data`, { headers });
+  expect(exported.status()).toBe(200);
+  expect(await exported.json()).toMatchObject({ userId: customerId, data: { wishlist: [{ productId }] } });
+  expect((await request.delete(`${API_URL}/me/data`, { headers, data: { confirm: "NO" } })).status()).toBe(400);
+  const deleted = await request.delete(`${API_URL}/me/data`, { headers, data: { confirm: "DELETE_MY_DATA" } });
+  expect(deleted.status()).toBe(200);
+  expect(await deleted.json()).toMatchObject({ data: { deletedWishlistItems: 1 }, clerkAccountDeletionRequired: true });
+});

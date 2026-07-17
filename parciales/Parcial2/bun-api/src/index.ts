@@ -42,6 +42,7 @@ import {
   updateAdminUser,
   upsertOrderFromCheckout,
   dbReady,
+  db,
   processStripeEventAtomically,
   runInTransaction,
 } from "./db";
@@ -60,10 +61,12 @@ import { apiConfig } from "./config";
 import { authenticateCustomer } from "./customer-auth";
 import {
   adminUpdateSchema,
+  apiKeyInputSchema,
   checkoutInputSchema,
   couponInputSchema,
   couponValidationSchema,
   formatValidationIssues,
+  gdprDeleteSchema,
   inviteAdminSchema,
   inventoryUpdateSchema,
   orderStatusSchema,
@@ -73,6 +76,9 @@ import {
 } from "./validation";
 import { rateLimiter, requestIdentity, type RateLimitRule } from "./rate-limit";
 import { captureError, getErrorFeed, initializeObservability, queryLogs, resolveError, writeLog, type LogLevel, type ServiceName } from "./observability";
+import { createBackup, listBackups, migrateUp, migrationStatus, restoreBackup, rollbackLatestMigration, scheduleDailyBackups } from "./data-ops";
+import { authenticateApiKey, createApiKey, initializeApiKeys, listApiKeys, revokeApiKey, rotateApiKey } from "./api-keys";
+import { deleteUserData, exportUserData } from "./privacy";
 
 const port = apiConfig.port;
 const uploadsDir = join(process.cwd(), "public", "uploads");
@@ -387,6 +393,9 @@ async function cancelCheckoutForOrder(order: NonNullable<Awaited<ReturnType<type
 }
 
 await dbReady;
+await migrateUp(db);
+await initializeApiKeys(db);
+scheduleDailyBackups(db);
 await initializeObservability();
 
 const app = new Hono();
@@ -968,6 +977,111 @@ app.all("*", async (context) => {
         { role: body.role, permission: body.permission, allowed: roleHasPermission(body.role, body.permission) },
         { origin },
       );
+    }
+
+    // Operaciones de datos MongoDB (HU-048/HU-063). Se protegen con el rol
+    // administrativo existente y todas las mutaciones dejan auditoria.
+    if (url.pathname === "/admin/migrations" && req.method === "GET") {
+      const auth = authorize(req, "users:manage", origin); if ("error" in auth) return auth.error;
+      return jsonResponse({ data: await migrationStatus(db) }, { origin });
+    }
+    if (url.pathname === "/admin/migrations/run" && req.method === "POST") {
+      const auth = authorize(req, "users:manage", origin); if ("error" in auth) return auth.error;
+      const result = await migrateUp(db);
+      await recordAuditLog({ actor: auth.role, action: "migration.run", resource: "mongodb", details: JSON.stringify(result.executed) });
+      return jsonResponse({ data: result }, { origin });
+    }
+    if (url.pathname === "/admin/migrations/rollback" && req.method === "POST") {
+      const auth = authorize(req, "users:manage", origin); if ("error" in auth) return auth.error;
+      const body = await req.json().catch(() => null) as { confirmation?: string } | null;
+      try {
+        const result = await rollbackLatestMigration(db, body?.confirmation ?? "");
+        await recordAuditLog({ actor: auth.role, action: "migration.rollback", resource: "mongodb", details: String(result.rolledBack) });
+        return jsonResponse({ data: result }, { origin });
+      } catch (error) {
+        return errorResponse("INVALID_INPUT", error instanceof Error ? error.message : "Rollback invalido.", { status: 400, origin });
+      }
+    }
+    if (url.pathname === "/admin/backups" && req.method === "GET") {
+      const auth = authorize(req, "users:manage", origin); if ("error" in auth) return auth.error;
+      return jsonResponse({ data: await listBackups(db) }, { origin });
+    }
+    if (url.pathname === "/admin/backups" && req.method === "POST") {
+      const auth = authorize(req, "users:manage", origin); if ("error" in auth) return auth.error;
+      const backup = await createBackup(db);
+      await recordAuditLog({ actor: auth.role, action: "backup.create", resource: backup.id, details: `${backup.documentCount} documents` });
+      return jsonResponse({ data: backup }, { status: 201, origin });
+    }
+    const restoreMatch = url.pathname.match(/^\/admin\/backups\/([^/]+)\/restore$/);
+    if (restoreMatch && req.method === "POST") {
+      const auth = authorize(req, "users:manage", origin); if ("error" in auth) return auth.error;
+      const id = decodeURIComponent(restoreMatch[1]);
+      const body = await req.json().catch(() => null) as { confirmation?: string } | null;
+      try {
+        const restored = await restoreBackup(db, id, body?.confirmation ?? "");
+        if (!restored) return errorResponse("NOT_FOUND", "Backup no encontrado.", { status: 404, origin });
+        await recordAuditLog({ actor: auth.role, action: "backup.restore", resource: id, details: JSON.stringify(restored.collections) });
+        return jsonResponse({ data: restored }, { origin });
+      } catch (error) {
+        return errorResponse("INVALID_INPUT", error instanceof Error ? error.message : "Restauracion invalida.", { status: 400, origin });
+      }
+    }
+
+    // API keys para integraciones (HU-027). El secreto solo se devuelve al
+    // crear/rotar; MongoDB conserva exclusivamente SHA-256, nunca el token.
+    if (url.pathname === "/admin/api-keys" && req.method === "GET") {
+      const auth = authorize(req, "users:manage", origin); if ("error" in auth) return auth.error;
+      return jsonResponse({ data: await listApiKeys(db) }, { origin });
+    }
+    if (url.pathname === "/admin/api-keys" && req.method === "POST") {
+      const auth = authorize(req, "users:manage", origin); if ("error" in auth) return auth.error;
+      const parsed = apiKeyInputSchema.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return errorResponse("INVALID_INPUT", "API key invalida.", { status: 400, origin, details: { issues: formatValidationIssues(parsed.error) } });
+      const created = await createApiKey(db, parsed.data);
+      await recordAuditLog({ actor: auth.role, action: "api-key.create", resource: created.apiKey.id, details: created.apiKey.name });
+      return jsonResponse({ data: created.apiKey, token: created.token, warning: "Guarda el token ahora; no volvera a mostrarse." }, { status: 201, origin });
+    }
+    const apiKeyActionMatch = url.pathname.match(/^\/admin\/api-keys\/([^/]+)\/(rotate|revoke)$/);
+    if (apiKeyActionMatch && req.method === "POST") {
+      const auth = authorize(req, "users:manage", origin); if ("error" in auth) return auth.error;
+      const id = decodeURIComponent(apiKeyActionMatch[1]);
+      if (apiKeyActionMatch[2] === "rotate") {
+        const rotated = await rotateApiKey(db, id);
+        if (!rotated) return errorResponse("NOT_FOUND", "API key no encontrada o revocada.", { status: 404, origin });
+        await recordAuditLog({ actor: auth.role, action: "api-key.rotate", resource: id, details: `replacement=${rotated.apiKey.id}` });
+        return jsonResponse({ data: rotated.apiKey, token: rotated.token, warning: "Guarda el token ahora; no volvera a mostrarse." }, { origin });
+      }
+      if (!await revokeApiKey(db, id)) return errorResponse("NOT_FOUND", "API key no encontrada o revocada.", { status: 404, origin });
+      await recordAuditLog({ actor: auth.role, action: "api-key.revoke", resource: id });
+      return jsonResponse({ ok: true }, { origin });
+    }
+
+    // Endpoint real de integracion: valida hash, expiracion y permiso.
+    if (url.pathname === "/integrations/catalog" && req.method === "GET") {
+      const token = extractBearerKey(req.headers.get("authorization"));
+      const key = token ? await authenticateApiKey(db, token, "catalog:read") : null;
+      if (!key) return errorResponse("UNAUTHORIZED", "API key invalida, expirada o sin permiso catalog:read.", { status: 401, origin });
+      await recordAuditLog({ actor: `api-key:${key.id}`, action: "api-key.authenticate", resource: "catalog:read" });
+      return jsonResponse({ data: await listProducts(), integration: { keyId: key.id, name: key.name } }, { origin });
+    }
+
+    // Derechos del usuario autenticado (HU-065): exportacion portable y
+    // borrado de preferencias/reseñas, conservando ordenes anonimizadas.
+    if (url.pathname === "/me/data" && req.method === "GET") {
+      const identity = await authenticateCommerceCustomer(req);
+      if (!identity) return errorResponse("UNAUTHORIZED", "Se requiere una sesion valida.", { status: 401, origin });
+      const payload = await exportUserData(db, identity.userId);
+      await recordAuditLog({ actor: identity.userId, action: "gdpr.export", resource: "customer-data" });
+      return jsonResponse(payload, { origin });
+    }
+    if (url.pathname === "/me/data" && req.method === "DELETE") {
+      const identity = await authenticateCommerceCustomer(req);
+      if (!identity) return errorResponse("UNAUTHORIZED", "Se requiere una sesion valida.", { status: 401, origin });
+      const parsed = gdprDeleteSchema.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return errorResponse("INVALID_INPUT", "Confirma con DELETE_MY_DATA.", { status: 400, origin });
+      const result = await deleteUserData(db, identity.userId);
+      await recordAuditLog({ actor: result.anonymousId, action: "gdpr.delete", resource: "customer-data", details: JSON.stringify({ anonymizedOrders: result.anonymizedOrders, deletedWishlistItems: result.deletedWishlistItems, deletedReviews: result.deletedReviews }) });
+      return jsonResponse({ data: result, clerkAccountDeletionRequired: true }, { origin });
     }
 
     if (url.pathname === "/admin/users" && req.method === "GET") {
