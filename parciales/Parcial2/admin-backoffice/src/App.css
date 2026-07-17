@@ -560,6 +560,26 @@ body {
   background: #fff8e8;
 }
 
+.auth-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #b7d7c2;
+  border-radius: 12px;
+  background: #effaf2;
+  color: #184c2b;
+}
+
+@media (max-width: 640px) {
+  .auth-notice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .secret-reveal code {
   overflow-wrap: anywhere;
   user-select: all;

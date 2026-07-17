@@ -121,12 +121,24 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   const loadData = useCallback(async function loadData() {
     setLoading(true);
     setError(null);
+    if (!adminKey) {
+      setLoading(false);
+      return;
+    }
     try {
       const [ordersResponse, productsResponse, alertsResponse] = await Promise.all([
         apiFetch(`${apiBaseUrl}/orders`),
         apiFetch(`${apiBaseUrl}/products?includeInactive=true`),
         apiFetch(`${apiBaseUrl}/inventory/alerts`),
       ]);
+
+      if ([ordersResponse, productsResponse, alertsResponse].some((response) => response.status === 401)) {
+        throw new Error("La clave administrativa no es válida. Verifícala e intenta nuevamente.");
+      }
+
+      if ([ordersResponse, productsResponse, alertsResponse].some((response) => response.status === 403)) {
+        throw new Error("La clave no tiene permisos suficientes para cargar el backoffice.");
+      }
 
       if (!ordersResponse.ok || !productsResponse.ok || !alertsResponse.ok) {
         throw new Error("No se pudo cargar la información del backoffice.");
@@ -427,6 +439,12 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
           <button type="button" onClick={() => setError(null)}>
             ✕
           </button>
+        </div>
+      ) : null}
+      {!adminKey ? (
+        <div className="auth-notice" role="status">
+          <span>Ingresa la clave administrativa para cargar productos, órdenes e inventario.</span>
+          <a className="button button-outline" href="#admin-access">Configurar acceso</a>
         </div>
       ) : null}
       {loading ? <p className="loading-text">Cargando datos del backoffice...</p> : null}

@@ -73,7 +73,7 @@ export function AdminUsers({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   return (
-    <section className="panel admin-users-panel">
+    <section className="panel admin-users-panel" id="admin-access">
       <div className="section-header"><div><h2>Usuarios administrativos</h2><p>Invita, asigna roles y suspende accesos del equipo.</p></div></div>
       <div className="admin-key-row">
         <label htmlFor="admin-api-key">Clave administrativa</label>
