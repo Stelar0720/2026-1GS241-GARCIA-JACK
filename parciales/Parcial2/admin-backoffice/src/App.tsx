@@ -2,6 +2,7 @@ import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-reac
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { AdminUsers } from "./AdminUsers";
+import { getApiErrorMessage, type ApiErrorBody } from "./api-error";
 
 // ============================================
 // TYPES
@@ -45,6 +46,20 @@ type ProductFormData = {
 };
 
 type StockAlert = { sku: string; stock: number; minimumStock: number; deficit: number };
+type ProductField = keyof Pick<ProductFormData, "name" | "description" | "priceUsd" | "stock" | "minimumStock">;
+
+function validateProduct(data: ProductFormData): Partial<Record<ProductField, string>> {
+  const errors: Partial<Record<ProductField, string>> = {};
+  if (!data.name.trim()) errors.name = "El nombre del producto es requerido.";
+  if (!data.description.trim()) errors.description = "La descripción del producto es requerida.";
+  const price = Number(data.priceUsd);
+  if (!data.priceUsd.trim() || !Number.isFinite(price) || price <= 0) errors.priceUsd = "El precio debe ser mayor que cero.";
+  const stock = Number(data.stock);
+  if (!data.stock.trim() || !Number.isInteger(stock) || stock < 0) errors.stock = "El stock debe ser un entero igual o mayor que cero.";
+  const minimumStock = Number(data.minimumStock);
+  if (!data.minimumStock.trim() || !Number.isInteger(minimumStock) || minimumStock < 0) errors.minimumStock = "El stock mínimo debe ser un entero igual o mayor que cero.";
+  return errors;
+}
 
 // ============================================
 // CONSTANTS
@@ -64,6 +79,10 @@ const ORDER_STATUS_LABELS: Record<Order["status"], string> = {
 function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   const apiBaseUrl = useMemo(() => import.meta.env.VITE_API_URL ?? "http://localhost:4000", []);
   const storefrontUrl = useMemo(() => import.meta.env.VITE_STOREFRONT_URL ?? "http://localhost:3000", []);
+  const [adminKey, setAdminKey] = useState(() =>
+    sessionStorage.getItem("urbansprout-admin-key") ??
+    (import.meta.env.VITE_E2E === "true" ? import.meta.env.VITE_E2E_ADMIN_KEY ?? "" : ""),
+  );
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([]);
@@ -85,15 +104,27 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
     stock: "0",
     minimumStock: "0",
   });
+  const [touchedProductFields, setTouchedProductFields] = useState<Partial<Record<ProductField, boolean>>>({});
+  const productErrors = validateProduct(productFormData);
+  const productFormInvalid = Object.keys(productErrors).length > 0;
+  const touchProductField = (field: ProductField) => setTouchedProductFields((current) => ({ ...current, [field]: true }));
+
+  const apiFetch = useCallback((input: string, init: RequestInit = {}) => fetch(input, {
+    ...init,
+    headers: {
+      ...(adminKey ? { Authorization: `Bearer ${adminKey}` } : {}),
+      ...init.headers,
+    },
+  }), [adminKey]);
 
   const loadData = useCallback(async function loadData() {
     setLoading(true);
     setError(null);
     try {
       const [ordersResponse, productsResponse, alertsResponse] = await Promise.all([
-        fetch(`${apiBaseUrl}/orders`),
-        fetch(`${apiBaseUrl}/products?includeInactive=true`),
-        fetch(`${apiBaseUrl}/inventory/alerts`),
+        apiFetch(`${apiBaseUrl}/orders`),
+        apiFetch(`${apiBaseUrl}/products?includeInactive=true`),
+        apiFetch(`${apiBaseUrl}/inventory/alerts`),
       ]);
 
       if (!ordersResponse.ok || !productsResponse.ok || !alertsResponse.ok) {
@@ -116,7 +147,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, apiFetch]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -126,6 +157,12 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
+  useEffect(() => {
+    const refreshKey = () => setAdminKey(sessionStorage.getItem("urbansprout-admin-key") ?? "");
+    window.addEventListener("urbansprout-admin-key", refreshKey);
+    return () => window.removeEventListener("urbansprout-admin-key", refreshKey);
+  }, []);
+
   // ============================================
   // ORDER HANDLERS
   // ============================================
@@ -133,7 +170,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   async function updateOrderStatus(orderId: string, status: Order["status"]) {
     setSavingOrder(orderId);
     try {
-      const response = await fetch(`${apiBaseUrl}/orders/${orderId}`, {
+      const response = await apiFetch(`${apiBaseUrl}/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -158,6 +195,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   // ============================================
 
   function openNewProductForm() {
+    setTouchedProductFields({});
     setEditingProduct(null);
     setProductFormData({
       name: "",
@@ -172,6 +210,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   }
 
   function openEditProductForm(product: Product) {
+    setTouchedProductFields({});
     setEditingProduct(product);
     setProductFormData({
       name: product.name,
@@ -186,6 +225,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   }
 
   function closeProductForm() {
+    setTouchedProductFields({});
     setShowProductForm(false);
     setEditingProduct(null);
     setProductFormData({
@@ -200,6 +240,8 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   }
 
   async function handleSaveProduct() {
+    setTouchedProductFields({ name: true, description: true, priceUsd: true, stock: true, minimumStock: true });
+    if (productFormInvalid) return;
     const price = parseFloat(productFormData.priceUsd);
     const stock = Number(productFormData.stock);
     const minimumStock = Number(productFormData.minimumStock);
@@ -236,7 +278,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
         : `${apiBaseUrl}/products`;
       const method = editingProduct ? "PATCH" : "POST";
 
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -249,22 +291,22 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       });
 
       if (!response.ok) {
-        const errorData = (await response.json()) as { error?: string };
-        throw new Error(errorData.error ?? "No se pudo guardar el producto.");
+        const errorData = (await response.json()) as ApiErrorBody;
+        throw new Error(getApiErrorMessage(errorData, "No se pudo guardar el producto."));
       }
 
       const savedProductBody = (await response.json()) as { data?: Product };
       const savedProductId = savedProductBody.data?.id ?? editingProduct?.id;
       if (savedProductId) {
-        const inventoryResponse = await fetch(`${apiBaseUrl}/inventory/${encodeURIComponent(savedProductId)}`, {
+        const inventoryResponse = await apiFetch(`${apiBaseUrl}/inventory/${encodeURIComponent(savedProductId)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ stock, minimumStock }),
         });
 
         if (!inventoryResponse.ok) {
-          const errorData = (await inventoryResponse.json()) as { error?: string };
-          throw new Error(errorData.error ?? "El producto se guardó, pero no se pudo actualizar el stock.");
+          const errorData = (await inventoryResponse.json()) as ApiErrorBody;
+          throw new Error(getApiErrorMessage(errorData, "El producto se guardó, pero no se pudo actualizar el stock."));
         }
       }
 
@@ -286,7 +328,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
 
     setSavingProduct(productId);
     try {
-      const response = await fetch(`${apiBaseUrl}/products/${productId}`, {
+      const response = await apiFetch(`${apiBaseUrl}/products/${productId}`, {
         method: "DELETE",
       });
 
@@ -318,14 +360,14 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       const formData = new FormData();
       formData.append("image", file);
 
-      const response = await fetch(`${apiBaseUrl}/uploads/product-image`, {
+      const response = await apiFetch(`${apiBaseUrl}/uploads/product-image`, {
         method: "POST",
         body: formData,
       });
 
-      const body = (await response.json()) as { imageUrl?: string; error?: string };
+      const body = (await response.json()) as { imageUrl?: string } & ApiErrorBody;
       if (!response.ok || !body.imageUrl) {
-        throw new Error(body.error ?? "No se pudo cargar la imagen del producto.");
+        throw new Error(getApiErrorMessage(body, "No se pudo cargar la imagen del producto."));
       }
 
       setProductFormData((current) => ({ ...current, imageUrl: body.imageUrl ?? "" }));
@@ -525,11 +567,15 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                 id="product-name"
                 type="text"
                 value={productFormData.name}
+                aria-invalid={touchedProductFields.name && Boolean(productErrors.name)}
+                aria-describedby={touchedProductFields.name && productErrors.name ? "product-name-error" : undefined}
+                onBlur={() => touchProductField("name")}
                 onChange={(e) =>
                   setProductFormData({ ...productFormData, name: e.target.value })
                 }
                 placeholder="Ej.: Kit balcón básico"
               />
+              {touchedProductFields.name && productErrors.name ? <span id="product-name-error" className="form-error" role="alert">{productErrors.name}</span> : null}
             </div>
 
             <div className="form-group">
@@ -537,12 +583,16 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
               <textarea
                 id="product-description"
                 value={productFormData.description}
+                aria-invalid={touchedProductFields.description && Boolean(productErrors.description)}
+                aria-describedby={touchedProductFields.description && productErrors.description ? "product-description-error" : undefined}
+                onBlur={() => touchProductField("description")}
                 onChange={(e) =>
                   setProductFormData({ ...productFormData, description: e.target.value })
                 }
                 placeholder="Describe el producto..."
                 rows={3}
               />
+              {touchedProductFields.description && productErrors.description ? <span id="product-description-error" className="form-error" role="alert">{productErrors.description}</span> : null}
             </div>
 
             <div className="form-group">
@@ -554,11 +604,15 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                   step="0.01"
                   min="0"
                   value={productFormData.priceUsd}
+                  aria-invalid={touchedProductFields.priceUsd && Boolean(productErrors.priceUsd)}
+                  aria-describedby={touchedProductFields.priceUsd && productErrors.priceUsd ? "product-price-error" : undefined}
+                  onBlur={() => touchProductField("priceUsd")}
                   onChange={(e) =>
                     setProductFormData({ ...productFormData, priceUsd: e.target.value })
                   }
                   placeholder="24.99"
                 />
+                {touchedProductFields.priceUsd && productErrors.priceUsd ? <span id="product-price-error" className="form-error" role="alert">{productErrors.priceUsd}</span> : null}
               </div>
 
               <div className="form-group">
@@ -584,10 +638,14 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                   min="0"
                   step="1"
                   value={productFormData.stock}
+                  aria-invalid={touchedProductFields.stock && Boolean(productErrors.stock)}
+                  aria-describedby={touchedProductFields.stock && productErrors.stock ? "product-stock-error" : undefined}
+                  onBlur={() => touchProductField("stock")}
                   onChange={(e) =>
                     setProductFormData({ ...productFormData, stock: e.target.value })
                   }
                 />
+                {touchedProductFields.stock && productErrors.stock ? <span id="product-stock-error" className="form-error" role="alert">{productErrors.stock}</span> : null}
               </div>
               <div className="form-group">
                 <label htmlFor="product-minimum-stock">Stock mínimo</label>
@@ -597,10 +655,14 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                   min="0"
                   step="1"
                   value={productFormData.minimumStock}
+                  aria-invalid={touchedProductFields.minimumStock && Boolean(productErrors.minimumStock)}
+                  aria-describedby={touchedProductFields.minimumStock && productErrors.minimumStock ? "product-minimum-stock-error" : undefined}
+                  onBlur={() => touchProductField("minimumStock")}
                   onChange={(e) =>
                     setProductFormData({ ...productFormData, minimumStock: e.target.value })
                   }
                 />
+                {touchedProductFields.minimumStock && productErrors.minimumStock ? <span id="product-minimum-stock-error" className="form-error" role="alert">{productErrors.minimumStock}</span> : null}
               </div>
             </div>
 
@@ -656,7 +718,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
               <button
                 type="button"
                 className="button button-primary"
-                disabled={savingProduct !== null}
+                disabled={savingProduct !== null || productFormInvalid}
                 onClick={() => void handleSaveProduct()}
               >
                 {savingProduct !== null ? "Guardando..." : "Guardar producto"}

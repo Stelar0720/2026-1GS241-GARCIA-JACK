@@ -1572,3 +1572,15 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* Estados de sistema */
+.system-page { min-height: min(70vh, 680px); display: grid; place-items: center; padding-block: 3rem; }
+.system-card { width: min(100%, 620px); display: grid; justify-items: start; gap: 1rem; padding: clamp(1.5rem, 5vw, 3rem); }
+.system-code { color: var(--primary); font-family: var(--font-display), serif; font-size: clamp(3rem, 10vw, 6rem); font-weight: 800; line-height: .9; opacity: .32; }
+.system-card p { color: var(--muted); }
+.system-actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+.offline-banner { position: fixed; z-index: 1000; right: 1rem; bottom: 1rem; width: min(calc(100% - 2rem), 430px); display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .8rem; border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line)); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--glass-shadow); padding: .9rem 1rem; }
+.offline-banner > span { color: var(--danger); }
+.offline-banner div { display: grid; gap: .15rem; }
+.offline-banner small { color: var(--muted); }
+.offline-banner button { border: 0; background: transparent; color: var(--primary); font-weight: 700; cursor: pointer; }

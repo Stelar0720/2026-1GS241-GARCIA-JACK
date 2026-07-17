@@ -27,6 +27,9 @@ type Permission =
   | "reports:read"
   | "export:read"
   | "audit:read"
+  | "logs:read"
+  | "errors:read"
+  | "errors:resolve"
   | "auth:read"
   | "users:manage"
   | "qa:run";
@@ -187,7 +190,7 @@ server.registerTool(
     description:
       "Valida si un rol tiene un permiso específico antes de ejecutar una acción (HU-025). Requiere auth:read.",
     inputSchema: {
-      role: z.enum(["public", "client", "support", "admin", "ci"]),
+      role: z.enum(["public", "client", "support", "admin", "developer", "ci"]),
       permission: z.string(),
     },
   },
@@ -449,6 +452,49 @@ server.registerTool("run_integration_tests", { title: "Ejecutar tests de integra
 server.registerTool("run_accessibility_audit", { title: "Auditar accesibilidad", description: "Ejecuta aXe WCAG 2.1 AA en rutas principales. Requiere qa:run.", inputSchema: {} }, async () => {
   const denied = denyIfMissing("qa:run"); if (denied) return denied;
   return textResult(await runQaCommand(["npm", "run", "test:a11y"]));
+});
+
+server.registerTool(
+  "configure_rate_limit",
+  {
+    title: "Configurar rate limiting",
+    description: "Consulta o ajusta en runtime límites por ruta y, opcionalmente, por identidad. Requiere rol admin (HU-026).",
+    inputSchema: {
+      action: z.enum(["list", "configure"]),
+      method: z.enum(["GET", "POST", "PATCH", "PUT", "DELETE"]).optional(),
+      path: z.string().startsWith("/").optional(),
+      limit: z.number().int().min(1).optional(),
+      windowSeconds: z.number().int().min(1).optional(),
+      identity: z.string().optional().describe("Identidad auth:<hash> o ip:<dirección>; omitir para regla general de ruta."),
+    },
+  },
+  async ({ action, method, path, limit, windowSeconds, identity }) => {
+    if (sessionRole !== "admin") return errorResult(`Acceso denegado: configure_rate_limit requiere rol admin; rol actual '${sessionRole}'.`);
+    if (action === "list") return textResult(await apiGet("/rate-limits"));
+    if (!method || !path || limit === undefined || windowSeconds === undefined) {
+      return errorResult("configure requiere method, path, limit y windowSeconds.");
+    }
+    return textResult(await apiSend("POST", "/rate-limits", { method, path, limit, windowSeconds, identity }));
+  },
+);
+
+server.registerTool("query_logs", {
+  title: "Consultar logs estructurados", description: "Filtra logs centralizados por servicio, nivel y rango de fechas (HU-034). Requiere logs:read.",
+  inputSchema: { service: z.enum(["api", "storefront", "backoffice", "mcp"]).optional(), level: z.enum(["info", "warn", "error"]).optional(), from: z.string().optional(), to: z.string().optional(), limit: z.number().int().min(1).max(500).optional() },
+}, async ({ service, level, from, to, limit }) => {
+  const denied = denyIfMissing("logs:read"); if (denied) return denied;
+  const params = new URLSearchParams(); if (service) params.set("service", service); if (level) params.set("level", level); if (from) params.set("from", from); if (to) params.set("to", to); if (limit) params.set("limit", String(limit));
+  return textResult(await apiGet(`/observability/logs?${params}`));
+});
+
+server.registerTool("get_error_feed", {
+  title: "Feed de errores", description: "Lista errores agrupados por fingerprint o marca uno como resuelto (HU-037). Requiere errors:read/errors:resolve.",
+  inputSchema: { action: z.enum(["list", "resolve"]).default("list"), fingerprint: z.string().optional(), status: z.enum(["open", "resolved"]).optional(), service: z.enum(["api", "storefront", "backoffice", "mcp"]).optional(), limit: z.number().int().min(1).max(200).optional() },
+}, async ({ action, fingerprint, status, service, limit }) => {
+  const permission: Permission = action === "resolve" ? "errors:resolve" : "errors:read"; const denied = denyIfMissing(permission); if (denied) return denied;
+  if (action === "resolve") { if (!fingerprint) return errorResult("resolve requiere fingerprint."); return textResult(await apiSend("PATCH", `/observability/errors/${encodeURIComponent(fingerprint)}/resolve`)); }
+  const params = new URLSearchParams(); if (status) params.set("status", status); if (service) params.set("service", service); if (limit) params.set("limit", String(limit));
+  return textResult(await apiGet(`/observability/errors?${params}`));
 });
 
 await loadSession();

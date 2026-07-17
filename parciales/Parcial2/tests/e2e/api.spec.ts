@@ -75,3 +75,37 @@ test("orders/sync: sin key rechaza con 401", async ({ request }) => {
   const response = await request.post(`${API_URL}/orders/sync`);
   expect(response.status()).toBe(401);
 });
+
+test("catálogo e inventario: rechazan mutaciones sin key admin", async ({ request }) => {
+  const product = await request.post(`${API_URL}/products`, {
+    data: { name: "No autorizado", description: "Intento", priceUsd: 10 },
+  });
+  const inventory = await request.patch(`${API_URL}/inventory/kit-inicio`, {
+    data: { stock: 5, minimumStock: 1 },
+  });
+  expect(product.status()).toBe(401);
+  expect(inventory.status()).toBe(401);
+});
+
+test("observabilidad: el feed requiere permisos", async ({ request }) => {
+  const logs = await request.get(`${API_URL}/observability/logs`);
+  const errors = await request.get(`${API_URL}/observability/errors`);
+  expect(logs.status()).toBe(401);
+  expect(errors.status()).toBe(401);
+});
+
+test("rate limiting: se configura sin reiniciar y responde Retry-After", async ({ request }) => {
+  const headers = { Authorization: "Bearer e2e-admin-key" };
+  const path = `/qa-rate-limit-${Date.now()}`;
+  const configured = await request.post(`${API_URL}/rate-limits`, {
+    headers,
+    data: { method: "GET", path, limit: 1, windowSeconds: 30 },
+  });
+  expect(configured.status()).toBe(200);
+
+  expect((await request.get(`${API_URL}${path}`)).status()).toBe(404);
+  const limited = await request.get(`${API_URL}${path}`);
+  expect(limited.status()).toBe(429);
+  expect(Number(limited.headers()["retry-after"])).toBeGreaterThan(0);
+  expect(((await limited.json()) as { error: { code: string } }).error.code).toBe("RATE_LIMITED");
+});

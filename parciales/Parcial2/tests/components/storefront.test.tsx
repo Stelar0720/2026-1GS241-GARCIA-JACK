@@ -32,7 +32,7 @@ describe("CheckoutButton", () => {
   });
 
   test("muestra el error devuelto por checkout", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Stock insuficiente" }), { status: 409 })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "CONFLICT", message: "Stock insuficiente", details: null } }), { status: 409 })));
     render(<CheckoutButton productId="kit" userId="user" userEmail="user@example.com" />);
     await userEvent.click(screen.getByRole("button", { name: "Comprar kit" }));
     await waitFor(() => expect(screen.getByText("Stock insuficiente")).toBeVisible());
