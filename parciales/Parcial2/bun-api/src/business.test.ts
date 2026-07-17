@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { calculateLineAmountUsd, canReserveStock, normalizeCheckoutLines, validateProductInput } from "./business";
+import { calculateCouponDiscount, calculateLineAmountUsd, canReserveStock, normalizeCheckoutLines, validateProductInput } from "./business";
 
 describe("lógica de negocio pura", () => {
   test("valida y normaliza productos", () => {
@@ -23,5 +23,9 @@ describe("lógica de negocio pura", () => {
     expect(canReserveStock(2, 3)).toBe(false);
     expect(canReserveStock(-1, 1)).toBe(false);
     expect(canReserveStock(2, 0)).toBe(false);
+  });
+  test("calcula cupones sin producir totales negativos", () => {
+    expect(calculateCouponDiscount(49.9, { type: "percent", value: 10 })).toBe(4.99);
+    expect(calculateCouponDiscount(20, { type: "fixed", value: 50 })).toBe(20);
   });
 });

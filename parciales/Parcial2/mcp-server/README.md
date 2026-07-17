@@ -4,7 +4,7 @@ Servidor MCP (Model Context Protocol) que expone operaciones de UrbanSprout a ag
 
 ## Autenticación por rol
 
-El servidor se lanza con una API key (`MCP_API_KEY`) que lo identifica ante el `bun-api`. Al arrancar consulta `GET /auth/whoami` para resolver su **rol** y **permisos**; cada tool se habilita solo si el rol tiene el permiso requerido, y las llamadas al backend reenvían la key como `Authorization: Bearer`.
+El servidor se lanza con una API key (`MCP_API_KEY`) que lo identifica ante el `bun-api`. Al arrancar consulta `GET /auth/whoami` para resolver su **rol** y **permisos**. Las operaciones personales, como la wishlist, usan por separado `MCP_USER_TOKEN`, un JWT de sesión de Clerk, para que el backend derive el usuario autenticado.
 
 | Rol | Key (env) | Permisos |
 |---|---|---|
@@ -16,7 +16,7 @@ El servidor se lanza con una API key (`MCP_API_KEY`) que lo identifica ante el `
 
 Las keys las define el `bun-api` por variables de entorno (`MCP_ADMIN_KEY`, `MCP_SUPPORT_KEY`, `MCP_CLIENT_KEY`). El servidor MCP se lanza con **una** de esas keys en `MCP_API_KEY`.
 
-## Tools (10)
+## Tools
 
 | Tool | HU | Permiso | Qué hace |
 |---|---|---|---|
@@ -34,6 +34,7 @@ Las keys las define el `bun-api` por variables de entorno (`MCP_ADMIN_KEY`, `MCP
 | `run_unit_tests` | HU-042 | `qa:run` | Ejecuta tests unitarios puros con cobertura |
 | `run_integration_tests` | HU-043 | `qa:run` | Ejecuta integración E2E con MongoDB aislada |
 | `run_accessibility_audit` | HU-061 | `qa:run` | Ejecuta aXe WCAG 2.1 AA |
+| `manage_wishlist` | HU-058 | JWT Clerk (`MCP_USER_TOKEN`) | Lista, agrega o elimina productos de la wishlist del cliente |
 
 ## Correrlo
 
@@ -63,7 +64,8 @@ Agregar a la config de MCP servers (`.mcp.json`):
       "cwd": "mcp-server",
       "env": {
         "API_URL": "http://localhost:4000",
-        "MCP_API_KEY": "<tu-key-segun-rol>"
+        "MCP_API_KEY": "<tu-key-segun-rol>",
+        "MCP_USER_TOKEN": "<jwt-clerk-del-cliente>"
       }
     }
   }
@@ -71,3 +73,5 @@ Agregar a la config de MCP servers (`.mcp.json`):
 ```
 
 Cambiando `MCP_API_KEY` cambia el rol y, por lo tanto, qué tools quedan habilitadas.
+
+`MCP_USER_TOKEN` es opcional para el resto de tools y obligatorio para `manage_wishlist`. Debe ser un token corto de sesión, no `CLERK_SECRET_KEY`. La tool no recibe `userId`: la API obtiene al usuario del claim `sub` del JWT.

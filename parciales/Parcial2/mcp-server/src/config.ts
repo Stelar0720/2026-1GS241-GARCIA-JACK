@@ -7,7 +7,7 @@ export function validateMcpEnvironment(source: EnvironmentSource = process.env) 
   if (missing.length > 0) throw new Error(`[config] Faltan variables del MCP para ${environment}: ${missing.join(", ")}`);
   const apiUrl = source.API_URL?.trim() || "http://localhost:4000";
   try { new URL(apiUrl); } catch { throw new Error("[config] API_URL debe ser una URL válida."); }
-  return { apiUrl, apiKey: source.MCP_API_KEY?.trim() || "" };
+  return { apiUrl, apiKey: source.MCP_API_KEY?.trim() || "", userToken: source.MCP_USER_TOKEN?.trim() || "" };
 }
 
 export const mcpConfig = validateMcpEnvironment();

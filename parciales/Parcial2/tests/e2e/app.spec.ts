@@ -215,3 +215,30 @@ test("api checkout: devuelve error controlado para producto inválido", async ({
   expect(typeof body.error?.message).toBe("string");
   expect(body.error).toHaveProperty("details");
 });
+
+test("commerce: filters categories and shows product tags", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Microverdes" })).toBeVisible();
+  await page.getByRole("button", { name: "Microverdes" }).click();
+  await expect(page.getByText("Kit microverde rápido", { exact: true })).toBeVisible();
+  await expect(page.getByText("Kit balcón básico", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Cosecha rapida", { exact: true })).toBeVisible();
+});
+
+test("commerce: applies WELCOME10 and reflects discounted total", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Agregar al carrito" }).first().click();
+  await page.getByLabel("Cupón de descuento").fill("WELCOME10");
+  await page.getByRole("button", { name: "Aplicar" }).click();
+  await expect(page.getByText("Cupón WELCOME10 aplicado correctamente.")).toBeVisible();
+  await expect(page.getByText("Descuento", { exact: true })).toBeVisible();
+  await expect(page.getByText("Total final", { exact: true })).toBeVisible();
+});
+
+test("commerce: wishlist and reviews expose safe signed-out states", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Guardar en favoritos" }).first()).toBeDisabled();
+  await page.getByRole("link", { name: "Ver detalles" }).first().click();
+  await expect(page.getByRole("heading", { name: "Reseñas verificadas" })).toBeVisible();
+  await expect(page.getByText("Configura Clerk e inicia sesión", { exact: false })).toBeVisible();
+});

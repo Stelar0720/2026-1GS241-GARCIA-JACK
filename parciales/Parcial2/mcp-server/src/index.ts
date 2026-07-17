@@ -16,6 +16,7 @@ import { mcpConfig } from "./config.js";
 
 const API_URL = mcpConfig.apiUrl;
 const API_KEY = mcpConfig.apiKey;
+const USER_TOKEN = mcpConfig.userToken;
 
 type Permission =
   | "catalog:read"
@@ -105,6 +106,19 @@ async function apiSend(method: string, path: string, payload?: unknown) {
   if (!response.ok) {
     throw new Error((body as { error?: string })?.error ?? `bun-api respondió ${response.status}`);
   }
+  return body;
+}
+
+async function userApiRequest(method: "GET" | "POST" | "DELETE", path: string) {
+  if (!USER_TOKEN) {
+    throw new Error("La wishlist requiere una sesión de cliente. Configura MCP_USER_TOKEN con un JWT vigente de Clerk.");
+  }
+  const response = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${USER_TOKEN}` },
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error((body as { error?: string })?.error ?? `bun-api respondió ${response.status}`);
   return body;
 }
 
@@ -496,6 +510,25 @@ server.registerTool("get_error_feed", {
   const params = new URLSearchParams(); if (status) params.set("status", status); if (service) params.set("service", service); if (limit) params.set("limit", String(limit));
   return textResult(await apiGet(`/observability/errors?${params}`));
 });
+
+// --- manage_wishlist (HU-058, cliente autenticado con Clerk) ---
+server.registerTool(
+  "manage_wishlist",
+  {
+    title: "Gestionar wishlist",
+    description: "Lista, agrega o elimina productos de la wishlist del cliente autenticado (HU-058). Requiere MCP_USER_TOKEN con un JWT vigente de Clerk.",
+    inputSchema: {
+      action: z.enum(["list", "add", "remove"]),
+      productId: z.string().trim().min(1).optional(),
+    },
+  },
+  async ({ action, productId }) => {
+    if (action === "list") return textResult(await userApiRequest("GET", "/wishlist"));
+    if (!productId) return errorResult(`${action} requiere productId.`);
+    const path = `/wishlist/${encodeURIComponent(productId)}`;
+    return textResult(await userApiRequest(action === "add" ? "POST" : "DELETE", path));
+  },
+);
 
 await loadSession();
 const transport = new StdioServerTransport();

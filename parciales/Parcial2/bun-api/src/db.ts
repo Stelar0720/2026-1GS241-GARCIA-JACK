@@ -10,7 +10,7 @@ export let db: Db;
 
 export type OrderStatus = "pending" | "paid" | "cancelled";
 export type PendingOrder = { checkoutSessionId: string; productId: string; buyerId: string; amountUsd: number; quantity: number };
-export type ProductInput = { name: string; description: string; priceUsd: number; tag: string; imageUrl: string };
+export type ProductInput = { name: string; description: string; priceUsd: number; tag: string; category?: string; tags?: string[]; imageUrl: string };
 export type ProductRecord = ProductInput & { id: string; active: number; stock: number; minimumStock: number; inventoryUpdatedAt: string | null; createdAt: string; updatedAt: string };
 export type AuditLogEntry = { id: string; timestamp: string; actor: string; action: string; resource: string; details: string };
 export type AdminUserRole = "support" | "admin";
@@ -28,6 +28,9 @@ type InventoryDocument = { sku: string; stock: number; minimumStock: number; upd
 export type StockAlert = InventoryDocument & { type: "low_stock"; deficit: number };
 type ProductDocument = ProductInput & { id: string; active: number; createdAt: string; updatedAt: string };
 type ProcessedStripeEvent = { eventId: string; type: string; processedAt: string };
+export type Coupon = { code: string; type: "percent" | "fixed"; value: number; minimumUsd: number; expiresAt: string | null; active: boolean; createdAt: string; updatedAt: string };
+export type Review = { id: string; productId: string; userId: string; rating: number; comment: string; createdAt: string; updatedAt: string };
+type WishlistItem = { userId: string; productId: string; createdAt: string };
 
 let orders: Collection<OrderDocument>;
 let inventory: Collection<InventoryDocument>;
@@ -35,11 +38,19 @@ let products: Collection<ProductDocument>;
 let auditLogs: Collection<AuditLogEntry>;
 let processedStripeEvents: Collection<ProcessedStripeEvent>;
 let adminUsers: Collection<AdminUser>;
+let coupons: Collection<Coupon>;
+let reviews: Collection<Review>;
+let wishlist: Collection<WishlistItem>;
 
 const seedProducts: ProductDocument[] = [
   { id: "kit-balcon-basico", name: "Kit balcón básico", description: "Lechuga, cilantro y cebollín para espacios con 2-3 horas de luz.", priceUsd: 24.9, tag: "Inicio", imageUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop", active: 1, createdAt: "", updatedAt: "" },
   { id: "kit-microverde-rapido", name: "Kit microverde rápido", description: "Microbrotes listos en 7-10 días, ideal para cocinas en apartamentos.", priceUsd: 29.9, tag: "Más vendido", imageUrl: "https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?w=400&h=300&fit=crop", active: 1, createdAt: "", updatedAt: "" },
   { id: "kit-aromaticas-compacto", name: "Kit aromáticas compacto", description: "Albahaca, menta y perejil con guía de poda y riego urbano.", priceUsd: 34.9, tag: "Premium", imageUrl: "https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?w=400&h=300&fit=crop", active: 1, createdAt: "", updatedAt: "" },
+];
+const seedTaxonomy = [
+  { category: "Hortalizas", tags: ["Principiantes", "Balcon"] },
+  { category: "Microverdes", tags: ["Cosecha rapida", "Interior"] },
+  { category: "Aromaticas", tags: ["Cocina", "Compacto"] },
 ];
 
 async function initialize() {
@@ -49,18 +60,22 @@ async function initialize() {
   products = db.collection<ProductDocument>("products"); auditLogs = db.collection<AuditLogEntry>("audit_logs");
   processedStripeEvents = db.collection<ProcessedStripeEvent>("processed_stripe_events");
   adminUsers = db.collection<AdminUser>("admin_users");
+  coupons = db.collection<Coupon>("coupons"); reviews = db.collection<Review>("reviews"); wishlist = db.collection<WishlistItem>("wishlist");
   await Promise.all([
     orders.createIndex({ checkoutSessionId: 1 }, { unique: true }), orders.createIndex({ buyerId: 1, createdAt: -1 }),
     orders.createIndex({ buyerEmail: 1, createdAt: -1 }), products.createIndex({ id: 1 }, { unique: true }),
     inventory.createIndex({ sku: 1 }, { unique: true }), auditLogs.createIndex({ timestamp: -1 }),
     processedStripeEvents.createIndex({ eventId: 1 }, { unique: true }),
     adminUsers.createIndex({ email: 1 }, { unique: true }), adminUsers.createIndex({ name: "text", email: "text" }),
+    coupons.createIndex({ code: 1 }, { unique: true }), reviews.createIndex({ productId: 1, createdAt: -1 }),
+    reviews.createIndex({ productId: 1, userId: 1 }, { unique: true }), wishlist.createIndex({ userId: 1, productId: 1 }, { unique: true }),
   ]);
   const now = new Date().toISOString();
   await Promise.all(seedProducts.flatMap((product, index) => [
-    products.updateOne({ id: product.id }, { $setOnInsert: { ...product, createdAt: now, updatedAt: now } }, { upsert: true }),
+    products.updateOne({ id: product.id }, { $set: seedTaxonomy[index], $setOnInsert: { ...product, createdAt: now, updatedAt: now } }, { upsert: true }),
     inventory.updateOne({ sku: product.id }, { $setOnInsert: { sku: product.id, stock: [18, 24, 15][index], minimumStock: [5, 8, 5][index], updatedAt: now } }, { upsert: true }),
   ]));
+  await coupons.updateOne({ code: "WELCOME10" }, { $setOnInsert: { code: "WELCOME10", type: "percent", value: 10, minimumUsd: 0, expiresAt: null, active: true, createdAt: now, updatedAt: now } }, { upsert: true });
 }
 
 export const dbReady = initialize();
@@ -152,11 +167,26 @@ export async function updateInventory(params: { sku: string; stock: number; mini
 
 function makeProductId(name: string) { const slug = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48); return `${slug || "producto"}-${randomUUID().slice(0, 8)}`; }
 async function hydrateProduct(product: (ProductDocument & { _id?: unknown }) | null): Promise<ProductRecord | null> { if (!product) return null; const item = await inventory.findOne({ sku: product.id }); const { _id: _ignored, ...clean } = product; return { ...clean, stock: item?.stock ?? 0, minimumStock: item?.minimumStock ?? 0, inventoryUpdatedAt: item?.updatedAt ?? null }; }
-export async function listProducts(options: { includeInactive?: boolean } = {}) { await ready(); const rows = await products.find(options.includeInactive ? {} : { active: 1 }).sort({ createdAt: -1 }).toArray(); return (await Promise.all(rows.map(hydrateProduct))).filter((row): row is ProductRecord => row !== null); }
+export async function listProducts(options: { includeInactive?: boolean; category?: string; tag?: string } = {}) { await ready(); const filter: Filter<ProductDocument> = options.includeInactive ? {} : { active: 1 }; if (options.category) filter.category = options.category; if (options.tag) filter.$or = [{ tag: options.tag }, { tags: options.tag }]; const rows = await products.find(filter).sort({ createdAt: -1 }).toArray(); return (await Promise.all(rows.map(hydrateProduct))).filter((row): row is ProductRecord => row !== null); }
+export async function listTaxonomy() { await ready(); const rows = await products.find({ active: 1 }, { projection: { category: 1, tag: 1, tags: 1 } }).toArray(); return { categories: [...new Set(rows.map((row) => row.category).filter((item): item is string => Boolean(item)))].sort(), tags: [...new Set(rows.flatMap((row) => [row.tag, ...(row.tags ?? [])]).filter((item): item is string => Boolean(item)))].sort() }; }
 export async function getActiveProduct(productId: string) { await ready(); return hydrateProduct(await products.findOne({ id: productId, active: 1 })); }
 export async function createProduct(params: ProductInput) { await ready(); const now = new Date().toISOString(); const product = { ...params, id: makeProductId(params.name), active: 1, createdAt: now, updatedAt: now }; await products.insertOne(product); await createInventoryIfMissing(product.id); return hydrateProduct(product); }
 export async function updateProduct(productId: string, params: ProductInput) { await ready(); await products.updateOne({ id: productId }, { $set: { ...params, updatedAt: new Date().toISOString() } }); return hydrateProduct(await products.findOne({ id: productId })); }
 export async function deleteProduct(productId: string) { await ready(); return (await products.deleteOne({ id: productId })).deletedCount > 0; }
+
+export async function getCoupon(code: string) { await ready(); return coupons.findOne({ code: code.trim().toUpperCase() }, { projection: { _id: 0 } }); }
+export async function saveCoupon(input: Omit<Coupon, "createdAt" | "updatedAt">) { await ready(); const now = new Date().toISOString(); await coupons.updateOne({ code: input.code }, { $set: { ...input, updatedAt: now }, $setOnInsert: { createdAt: now } }, { upsert: true }); return getCoupon(input.code); }
+export async function deleteCoupon(code: string) { await ready(); return (await coupons.deleteOne({ code: code.trim().toUpperCase() })).deletedCount > 0; }
+export async function listCoupons() { await ready(); return coupons.find({}, { projection: { _id: 0 } }).sort({ code: 1 }).toArray(); }
+
+export async function listWishlist(userId: string) { await ready(); const items = await wishlist.find({ userId }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray(); const records = await products.find({ id: { $in: items.map((item) => item.productId) }, active: 1 }).toArray(); const map = new Map(records.map((item) => [item.id, item])); return (await Promise.all(items.map((item) => hydrateProduct(map.get(item.productId) ?? null)))).filter((item): item is ProductRecord => item !== null); }
+export async function addWishlistItem(userId: string, productId: string) { await ready(); if (!await products.findOne({ id: productId, active: 1 })) return false; await wishlist.updateOne({ userId, productId }, { $setOnInsert: { userId, productId, createdAt: new Date().toISOString() } }, { upsert: true }); return true; }
+export async function removeWishlistItem(userId: string, productId: string) { await ready(); return (await wishlist.deleteOne({ userId, productId })).deletedCount > 0; }
+
+function toPublicReview(review: Review | null) { return review ? { id: review.id, productId: review.productId, authorName: "Comprador verificado", rating: review.rating, comment: review.comment, createdAt: review.createdAt, updatedAt: review.updatedAt } : null; }
+export async function listReviews(productId: string) { await ready(); const rows = await reviews.find({ productId }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray(); const data = rows.map(toPublicReview); const average = rows.length ? Number((rows.reduce((sum, item) => sum + item.rating, 0) / rows.length).toFixed(1)) : 0; return { data, summary: { count: rows.length, average } }; }
+export async function hasPurchasedProduct(userId: string, productId: string) { await ready(); return Boolean(await orders.findOne({ buyerId: userId, productId, status: "paid" })); }
+export async function saveReview(userId: string, productId: string, input: { rating: number; comment: string }) { await ready(); const now = new Date().toISOString(); await reviews.updateOne({ userId, productId }, { $set: { ...input, updatedAt: now }, $setOnInsert: { id: randomUUID(), userId, productId, createdAt: now } }, { upsert: true }); return toPublicReview(await reviews.findOne({ userId, productId }, { projection: { _id: 0 } })); }
 
 export async function recordAuditLog(params: { actor: string; action: string; resource: string; details?: string }) { await ready(); await auditLogs.insertOne({ id: randomUUID(), timestamp: new Date().toISOString(), actor: params.actor, action: params.action, resource: params.resource, details: params.details ?? "" }); }
 export async function queryAuditLogs(filters: { actor?: string; action?: string; from?: string; to?: string; limit?: number }): Promise<AuditLogEntry[]> { await ready(); const filter: Filter<AuditLogEntry> = {}; if (filters.actor) filter.actor = filters.actor; if (filters.action) filter.action = filters.action; if (filters.from || filters.to) filter.timestamp = { ...(filters.from ? { $gte: filters.from } : {}), ...(filters.to ? { $lte: filters.to } : {}) }; const limit = Math.max(1, Math.min(Math.floor(filters.limit ?? 100), 500)); return auditLogs.find(filter, { projection: { _id: 0 } }).sort({ timestamp: -1 }).limit(limit).toArray(); }

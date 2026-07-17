@@ -6,14 +6,21 @@ import { existsSync, mkdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import {
   cancelPendingCheckoutOrders,
+  addWishlistItem,
   createProduct,
+  deleteCoupon,
   deleteProduct,
   generateSalesReport,
   inviteAdminUser,
   getActiveProduct,
+  getCoupon,
   getInventoryStock,
   getOrderById,
   listInventory,
+  listCoupons,
+  listReviews,
+  listTaxonomy,
+  listWishlist,
   listStockAlerts,
   searchAdminUsers,
   listOrders,
@@ -25,6 +32,10 @@ import {
   ProductRecord,
   queryAuditLogs,
   recordAuditLog,
+  removeWishlistItem,
+  saveCoupon,
+  saveReview,
+  hasPurchasedProduct,
   updateInventory,
   updateOrderStatus,
   updateProduct,
@@ -44,17 +55,20 @@ import {
   ROLE_PERMISSIONS,
 } from "./auth";
 import type { AdminUserRole, AdminUserStatus } from "./db";
-import { calculateLineAmountUsd, canReserveStock, normalizeCheckoutLines, validateProductInput, type CheckoutLineInput } from "./business";
+import { calculateCouponDiscount, calculateLineAmountUsd, canReserveStock, normalizeCheckoutLines, validateProductInput, type CheckoutLineInput } from "./business";
 import { apiConfig } from "./config";
 import { authenticateCustomer } from "./customer-auth";
 import {
   adminUpdateSchema,
   checkoutInputSchema,
+  couponInputSchema,
+  couponValidationSchema,
   formatValidationIssues,
   inviteAdminSchema,
   inventoryUpdateSchema,
   orderStatusSchema,
   productInputSchema,
+  reviewInputSchema,
   safeId,
 } from "./validation";
 import { rateLimiter, requestIdentity, type RateLimitRule } from "./rate-limit";
@@ -74,7 +88,7 @@ function getCorsHeaders(origin: string | null) {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": safeOrigin,
     "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization,Content-Type,Stripe-Signature",
+    "Access-Control-Allow-Headers": "Authorization,Content-Type,Stripe-Signature,X-Customer-Id",
   };
 }
 
@@ -129,6 +143,15 @@ function authorize(
   }
 
   return { role };
+}
+
+async function authenticateCommerceCustomer(req: Request) {
+  const clerkIdentity = await authenticateCustomer(req);
+  if (clerkIdentity) return clerkIdentity;
+  const e2eKey = process.env.MCP_CLIENT_KEY?.trim();
+  const suppliedKey = extractBearerKey(req.headers.get("authorization"));
+  const userId = req.headers.get("x-customer-id")?.trim();
+  return apiConfig.environment === "test" && e2eKey && suppliedKey === e2eKey && userId && safeId.safeParse(userId).success ? { userId } : null;
 }
 
 function toCsv(rows: Record<string, unknown>[]): string {
@@ -423,7 +446,11 @@ app.all("*", async (context) => {
 
     if (req.method === "GET" && url.pathname === "/products") {
       const includeInactive = url.searchParams.get("includeInactive") === "true";
-      return jsonResponse({ data: await listProducts({ includeInactive }) }, { origin });
+      return jsonResponse({ data: await listProducts({ includeInactive, category: url.searchParams.get("category") || undefined, tag: url.searchParams.get("tag") || undefined }) }, { origin });
+    }
+
+    if (req.method === "GET" && url.pathname === "/products/taxonomy") {
+      return jsonResponse({ data: await listTaxonomy() }, { origin });
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/uploads/")) {
@@ -527,6 +554,68 @@ app.all("*", async (context) => {
       }
     }
 
+    if (req.method === "POST" && url.pathname === "/coupons/validate") {
+      const parsed = couponValidationSchema.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return errorResponse("INVALID_INPUT", "Datos del cupón inválidos.", { status: 400, origin, details: { issues: formatValidationIssues(parsed.error) } });
+      const coupon = await getCoupon(parsed.data.code);
+      const expired = Boolean(coupon?.expiresAt && new Date(coupon.expiresAt).getTime() <= Date.now());
+      if (!coupon || !coupon.active || expired || parsed.data.subtotalUsd < coupon.minimumUsd) {
+        return errorResponse("INVALID_INPUT", "El cupón no existe, expiró o no cumple el mínimo.", { status: 400, origin });
+      }
+      const discountUsd = calculateCouponDiscount(parsed.data.subtotalUsd, coupon);
+      return jsonResponse({ data: { code: coupon.code, discountUsd, totalUsd: Number((parsed.data.subtotalUsd - discountUsd).toFixed(2)) } }, { origin });
+    }
+
+    if (url.pathname === "/coupons" && req.method === "GET") {
+      const auth = authorize(req, "catalog:read", origin); if ("error" in auth) return auth.error;
+      return jsonResponse({ data: await listCoupons() }, { origin });
+    }
+    if (url.pathname === "/coupons" && req.method === "POST") {
+      const auth = authorize(req, "catalog:write", origin); if ("error" in auth) return auth.error;
+      const parsed = couponInputSchema.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return errorResponse("INVALID_INPUT", "Cupón inválido.", { status: 400, origin, details: { issues: formatValidationIssues(parsed.error) } });
+      const data = await saveCoupon(parsed.data); await recordAuditLog({ actor: auth.role, action: "coupon.save", resource: parsed.data.code });
+      return jsonResponse({ data }, { status: 201, origin });
+    }
+    if (url.pathname.startsWith("/coupons/") && req.method === "DELETE") {
+      const auth = authorize(req, "catalog:write", origin); if ("error" in auth) return auth.error;
+      const code = decodeURIComponent(url.pathname.split("/")[2] || "").toUpperCase();
+      if (!await deleteCoupon(code)) return errorResponse("NOT_FOUND", "Cupón no encontrado.", { status: 404, origin });
+      return jsonResponse({ ok: true }, { origin });
+    }
+
+    const customerWishlistMatch = url.pathname.match(/^\/customers\/([^/]+)\/wishlist(?:\/([^/]+))?$/);
+    const simpleWishlistMatch = url.pathname.match(/^\/wishlist(?:\/([^/]+))?$/);
+    if (customerWishlistMatch || simpleWishlistMatch) {
+      const identity = await authenticateCommerceCustomer(req);
+      if (!identity) return errorResponse("UNAUTHORIZED", "Se requiere una sesión válida.", { status: 401, origin });
+      const pathUserId = customerWishlistMatch ? decodeURIComponent(customerWishlistMatch[1]) : identity.userId;
+      if (pathUserId !== identity.userId) return errorResponse("FORBIDDEN", "No puedes modificar la wishlist de otro cliente.", { status: 403, origin });
+      const productId = decodeURIComponent((customerWishlistMatch?.[2] ?? simpleWishlistMatch?.[1]) || "");
+      if (req.method === "GET" && !productId) return jsonResponse({ data: await listWishlist(identity.userId) }, { origin });
+      if ((req.method === "POST" || req.method === "DELETE") && !safeId.safeParse(productId).success) return errorResponse("INVALID_INPUT", "Producto inválido.", { status: 400, origin });
+      if (req.method === "POST") {
+        if (!await addWishlistItem(identity.userId, productId)) return errorResponse("NOT_FOUND", "Producto no encontrado.", { status: 404, origin });
+        return jsonResponse({ data: await listWishlist(identity.userId) }, { status: 201, origin });
+      }
+      if (req.method === "DELETE") { await removeWishlistItem(identity.userId, productId); return jsonResponse({ ok: true }, { origin }); }
+    }
+
+    const reviewsMatch = url.pathname.match(/^\/products\/([^/]+)\/reviews$/);
+    if (reviewsMatch) {
+      const productId = decodeURIComponent(reviewsMatch[1]);
+      if (!safeId.safeParse(productId).success) return errorResponse("INVALID_INPUT", "Producto inválido.", { status: 400, origin });
+      if (req.method === "GET") return jsonResponse(await listReviews(productId), { origin });
+      if (req.method === "POST") {
+        const identity = await authenticateCommerceCustomer(req);
+        if (!identity) return errorResponse("UNAUTHORIZED", "Se requiere una sesión válida.", { status: 401, origin });
+        if (!await hasPurchasedProduct(identity.userId, productId)) return errorResponse("FORBIDDEN", "Solo compradores verificados pueden reseñar este producto.", { status: 403, origin });
+        const parsed = reviewInputSchema.safeParse(await req.json().catch(() => null));
+        if (!parsed.success) return errorResponse("INVALID_INPUT", "Reseña inválida.", { status: 400, origin, details: { issues: formatValidationIssues(parsed.error) } });
+        return jsonResponse({ data: await saveReview(identity.userId, productId, parsed.data) }, { status: 201, origin });
+      }
+    }
+
     if (req.method === "POST" && url.pathname === "/api/checkout") {
       const parsedBody = checkoutInputSchema.safeParse(await req.json().catch(() => null));
       if (!parsedBody.success) {
@@ -550,6 +639,18 @@ app.all("*", async (context) => {
       }
       const checkoutLines = parsedLines.data;
 
+      const subtotalUsd = Number(checkoutLines.reduce((sum, line) => sum + line.amountUsd, 0).toFixed(2));
+      let appliedCoupon: Awaited<ReturnType<typeof getCoupon>> = null;
+      let discountUsd = 0;
+      if (body.couponCode) {
+        appliedCoupon = await getCoupon(body.couponCode);
+        const expired = Boolean(appliedCoupon?.expiresAt && new Date(appliedCoupon.expiresAt).getTime() <= Date.now());
+        if (!appliedCoupon || !appliedCoupon.active || expired || subtotalUsd < appliedCoupon.minimumUsd) {
+          return errorResponse("INVALID_INPUT", "El cupón no es válido para este carrito.", { status: 400, origin });
+        }
+        discountUsd = calculateCouponDiscount(subtotalUsd, appliedCoupon);
+      }
+
       if (!stripeClient) {
         return errorResponse("SERVICE_UNAVAILABLE", "Configura STRIPE_SECRET_KEY para habilitar checkout.", { status: 503, origin });
       }
@@ -557,23 +658,47 @@ app.all("*", async (context) => {
       const storefrontUrl = apiConfig.appUrl;
       const normalizedEmail = body.userEmail?.trim().toLowerCase() || undefined;
       const buyerId = body.userId?.trim() || `guest-${Date.now()}`;
-      const cartItems = checkoutLines.map((line) => ({
+      let remainingDiscountCents = Math.round(discountUsd * 100);
+      const discountedAmounts = checkoutLines.map((line, index) => {
+        const grossCents = Math.round(line.amountUsd * 100);
+        const allocated = index === checkoutLines.length - 1
+          ? remainingDiscountCents
+          : Math.min(remainingDiscountCents, Math.round(discountUsd * 100 * line.amountUsd / subtotalUsd));
+        remainingDiscountCents -= allocated;
+        return Math.max(0, grossCents - allocated) / 100;
+      });
+      const cartItems = checkoutLines.map((line, index) => ({
         productId: line.product.id,
         quantity: line.quantity,
-        amountUsd: line.amountUsd,
+        amountUsd: discountedAmounts[index],
       }));
 
       let checkoutSession: Stripe.Checkout.Session | null = null;
+      let stripeCouponId: string | null = null;
       try {
+        if (appliedCoupon && discountUsd > 0) {
+          const stripeCoupon = await stripeClient.coupons.create({
+            duration: "once",
+            name: `UrbanSprout ${appliedCoupon.code}`,
+            ...(appliedCoupon.type === "percent"
+              ? { percent_off: appliedCoupon.value }
+              : { amount_off: Math.round(discountUsd * 100), currency: "usd" }),
+            metadata: { urbansproutCode: appliedCoupon.code },
+          });
+          stripeCouponId = stripeCoupon.id;
+        }
         checkoutSession = await stripeClient.checkout.sessions.create({
           mode: "payment",
           success_url: `${storefrontUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${storefrontUrl}/checkout/cancelled`,
           customer_email: normalizedEmail,
+          discounts: stripeCouponId ? [{ coupon: stripeCouponId }] : undefined,
           metadata: {
             productId: checkoutLines[0].product.id,
             buyerId,
             cartItems: JSON.stringify(cartItems),
+            couponCode: appliedCoupon?.code ?? "",
+            discountUsd: discountUsd.toFixed(2),
           },
           line_items: checkoutLines.map((line) => ({
               quantity: line.quantity,
@@ -597,12 +722,12 @@ app.all("*", async (context) => {
               buyerEmail: normalizedEmail ?? null,
               status: "pending",
               quantity: line.quantity,
-              amountUsd: line.amountUsd,
+              amountUsd: discountedAmounts[checkoutLines.indexOf(line)],
             }, dbSession);
           }
         });
 
-        return jsonResponse({ checkoutUrl: checkoutSession.url }, { origin });
+        return jsonResponse({ checkoutUrl: checkoutSession.url, discountUsd }, { origin });
       } catch (error) {
         if (checkoutSession?.id && checkoutSession.status === "open") {
           try {
