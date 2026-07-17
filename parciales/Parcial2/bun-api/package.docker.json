@@ -7,10 +7,12 @@
     "start": "bun src/index.ts"
   },
   "dependencies": {
+    "@clerk/backend": "3.11.7",
     "hono": "4.12.30",
     "mongodb": "6.21.0",
     "sparse-bitfield": "3.0.3",
     "stripe": "22.0.2",
-    "whatwg-url": "17.1.0"
+    "whatwg-url": "17.1.0",
+    "zod": "4.4.3"
   }
 }
