@@ -1612,3 +1612,15 @@ a {
 .offline-banner div { display: grid; gap: .15rem; }
 .offline-banner small { color: var(--muted); }
 .offline-banner button { border: 0; background: transparent; color: var(--primary); font-weight: 700; cursor: pointer; }
+.danger-zone {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, #b42318 55%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, #b42318 7%, var(--surface));
+}
+
+.danger-zone input {
+  width: min(100%, 32rem);
+}

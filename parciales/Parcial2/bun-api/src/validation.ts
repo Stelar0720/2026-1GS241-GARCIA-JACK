@@ -38,6 +38,14 @@ export const couponInputSchema = z.object({
 
 export const wishlistInputSchema = z.object({ productId: safeId }).strict();
 
+export const apiKeyInputSchema = z.object({
+  name: safeText(80, 2),
+  permissions: z.array(z.enum(["catalog:read", "orders:read", "reports:read"])).min(1).max(3),
+  expiresAt: z.iso.datetime().nullable().optional(),
+}).strict().refine((value) => !value.expiresAt || new Date(value.expiresAt).getTime() > Date.now(), { message: "La expiracion debe ser futura", path: ["expiresAt"] });
+
+export const gdprDeleteSchema = z.object({ confirm: z.literal("DELETE_MY_DATA") }).strict();
+
 export const reviewInputSchema = z.object({
   rating: z.number().int().min(1).max(5),
   comment: safeText(1_000, 1),

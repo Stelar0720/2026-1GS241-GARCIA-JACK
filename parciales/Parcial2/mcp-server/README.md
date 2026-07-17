@@ -35,6 +35,8 @@ Las keys las define el `bun-api` por variables de entorno (`MCP_ADMIN_KEY`, `MCP
 | `run_integration_tests` | HU-043 | `qa:run` | Ejecuta integración E2E con MongoDB aislada |
 | `run_accessibility_audit` | HU-061 | `qa:run` | Ejecuta aXe WCAG 2.1 AA |
 | `manage_wishlist` | HU-058 | JWT Clerk (`MCP_USER_TOKEN`) | Lista, agrega o elimina productos de la wishlist del cliente |
+| `manage_api_keys` | HU-027 | admin | Crea, lista, rota y revoca API keys hash-only |
+| `manage_backups` | HU-063 | admin | Crea, lista y restaura snapshots MongoDB confirmados |
 
 ## Correrlo
 

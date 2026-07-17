@@ -184,6 +184,14 @@ test("admin: protege o renderiza estado esperado", async ({ page }) => {
   await expectAnyVisibleText(page, ["Backoffice separado", "Abrir backoffice"]);
 });
 
+test("admin backoffice: renders API key, backup and migration controls", async ({ page }) => {
+  await page.goto("http://localhost:5173");
+  await expect(page.getByRole("heading", { name: "Datos y seguridad" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Crear API key" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Crear backup" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Migraciones" })).toBeVisible();
+});
+
 test("checkout success: muestra confirmación con la referencia de pago", async ({ page }) => {
   const response = await page.goto("/checkout/success?session_id=cs_test_abcdefghijklmnop");
   expect(response).not.toBeNull();

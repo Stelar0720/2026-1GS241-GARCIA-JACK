@@ -551,3 +551,16 @@ body {
     gap: 0.75rem;
   }
 }
+.secret-reveal {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+  border: 1px solid #d99b22;
+  border-radius: 0.75rem;
+  background: #fff8e8;
+}
+
+.secret-reveal code {
+  overflow-wrap: anywhere;
+  user-select: all;
+}

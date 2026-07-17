@@ -511,6 +511,49 @@ server.registerTool("get_error_feed", {
   return textResult(await apiGet(`/observability/errors?${params}`));
 });
 
+// --- manage_api_keys (HU-027, administrador) ---
+server.registerTool(
+  "manage_api_keys",
+  {
+    title: "Gestionar API keys",
+    description: "Crea, lista, rota o revoca API keys hash-only para integraciones. El secreto se muestra una sola vez.",
+    inputSchema: {
+      action: z.enum(["list", "create", "rotate", "revoke"]),
+      id: z.string().optional(),
+      name: z.string().min(2).max(80).optional(),
+      permissions: z.array(z.enum(["catalog:read", "orders:read", "reports:read"])).optional(),
+      expiresAt: z.string().datetime().optional(),
+    },
+  },
+  async ({ action, id, name, permissions, expiresAt }) => {
+    if (sessionRole !== "admin") return errorResult(`Acceso denegado: manage_api_keys requiere rol admin; rol actual '${sessionRole}'.`);
+    if (action === "list") return textResult(await apiGet("/admin/api-keys"));
+    if (action === "create") {
+      if (!name || !permissions?.length) return errorResult("create requiere name y permissions.");
+      return textResult(await apiSend("POST", "/admin/api-keys", { name, permissions, expiresAt: expiresAt ?? null }));
+    }
+    if (!id) return errorResult(`${action} requiere id.`);
+    return textResult(await apiSend("POST", `/admin/api-keys/${encodeURIComponent(id)}/${action}`));
+  },
+);
+
+// --- manage_backups (HU-063, administrador) ---
+server.registerTool(
+  "manage_backups",
+  {
+    title: "Gestionar backups MongoDB",
+    description: "Lista, crea o restaura snapshots JSON. Restaurar requiere confirmación exacta RESTORE:<id>.",
+    inputSchema: { action: z.enum(["list", "create", "restore"]), id: z.string().optional(), confirmation: z.string().optional() },
+  },
+  async ({ action, id, confirmation }) => {
+    if (sessionRole !== "admin") return errorResult(`Acceso denegado: manage_backups requiere rol admin; rol actual '${sessionRole}'.`);
+    if (action === "list") return textResult(await apiGet("/admin/backups"));
+    if (action === "create") return textResult(await apiSend("POST", "/admin/backups"));
+    if (!id || confirmation !== `RESTORE:${id}`) return errorResult("restore requiere id y confirmation exacta RESTORE:<id>.");
+    return textResult(await apiSend("POST", `/admin/backups/${encodeURIComponent(id)}/restore`, { confirmation }));
+  },
+);
+
 // --- manage_wishlist (HU-058, cliente autenticado con Clerk) ---
 server.registerTool(
   "manage_wishlist",
