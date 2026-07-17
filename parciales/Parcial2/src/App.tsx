@@ -1,12 +1,13 @@
-import { SignIn, SignInButton, SignUp, UserButton, useUser } from "@clerk/clerk-react";
+import { SignIn, SignInButton, SignUp, UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Route, Routes, useLocation } from "react-router-dom";
 import gsap from "gsap";
 import Lenis from "lenis";
 import VanillaTilt from "vanilla-tilt";
 import { fetchProductsFromApi, fallbackProducts, Product } from "@/lib/catalog";
 import { getAdminAppUrl, getApiUrl, isClerkConfigured } from "@/lib/env";
 import { getUserRole } from "@/lib/roles";
+import { getApiErrorMessage, type ApiErrorBody } from "@/lib/api-error";
 import {
   FaqSection,
   FinalCta,
@@ -20,6 +21,8 @@ import {
 } from "@/components/home-sections";
 import { ProductDetailPage } from "@/pages/product-detail";
 import { DevolucionesPage, PrivacidadPage, TerminosPage } from "@/pages/legal";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { NetworkStatus, NotFoundPage } from "@/components/system-status";
 
 type PurchaseStatus = "pending" | "paid" | "cancelled";
 type ThemeMode = "light" | "dark";
@@ -176,12 +179,11 @@ function getPurchaseAccessText(status: PurchaseStatus) {
   return "Sin acceso";
 }
 
-async function fetchCustomerPurchases(userId: string, userEmail?: string | null): Promise<CustomerPurchase[]> {
-  const emailQuery = userEmail ? `?email=${encodeURIComponent(userEmail)}` : "";
+async function fetchCustomerPurchases(userId: string, token: string): Promise<CustomerPurchase[]> {
   let response: Response;
 
   try {
-    response = await fetch(`${getApiUrl()}/customers/${encodeURIComponent(userId)}/orders${emailQuery}`);
+    response = await fetch(`${getApiUrl()}/customers/${encodeURIComponent(userId)}/orders`, { headers: { Authorization: `Bearer ${token}` } });
   } catch {
     throw new Error(
       "No se pudo conectar con el servicio de compras. Verifica que la API esté corriendo.",
@@ -189,16 +191,16 @@ async function fetchCustomerPurchases(userId: string, userEmail?: string | null)
   }
 
   const rawBody = await response.text();
-  let body: { data?: CustomerPurchase[]; error?: string } | null = null;
+  let body: ({ data?: CustomerPurchase[] } & ApiErrorBody) | null = null;
 
   try {
-    body = JSON.parse(rawBody) as { data?: CustomerPurchase[]; error?: string };
+    body = JSON.parse(rawBody) as { data?: CustomerPurchase[] } & ApiErrorBody;
   } catch {
     body = null;
   }
 
   if (!response.ok) {
-    throw new Error(body?.error ?? "No se pudieron cargar tus compras.");
+    throw new Error(getApiErrorMessage(body, "No se pudieron cargar tus compras."));
   }
 
   return body?.data ?? [];
@@ -208,24 +210,28 @@ async function createCheckoutSession(params: {
   items: CartItem[];
   userId: string | null;
   userEmail: string | null;
+  token?: string | null;
 }) {
   const response = await fetch("/api/checkout", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+    headers: {
+      "Content-Type": "application/json",
+      ...(params.token ? { Authorization: `Bearer ${params.token}` } : {}),
+    },
+    body: JSON.stringify({ items: params.items, userId: params.userId, userEmail: params.userEmail }),
   });
 
   const rawBody = await response.text();
-  let parsedBody: { error?: string; checkoutUrl?: string } | null = null;
+  let parsedBody: ({ checkoutUrl?: string } & ApiErrorBody) | null = null;
 
   try {
-    parsedBody = JSON.parse(rawBody) as { error?: string; checkoutUrl?: string };
+    parsedBody = JSON.parse(rawBody) as { checkoutUrl?: string } & ApiErrorBody;
   } catch {
     parsedBody = null;
   }
 
   if (!response.ok) {
-    throw new Error(parsedBody?.error ?? "No se pudo iniciar el checkout.");
+    throw new Error(getApiErrorMessage(parsedBody, "No se pudo iniciar el checkout."));
   }
 
   if (!parsedBody?.checkoutUrl) {
@@ -253,7 +259,11 @@ function readStoredCart(): CartItem[] {
   }
 }
 
-function useStorefrontCart(userId: string | null, userEmail: string | null): StorefrontCart {
+function useStorefrontCart(
+  userId: string | null,
+  userEmail: string | null,
+  getAuthToken?: () => Promise<string | null>,
+): StorefrontCart {
   const [products, setProducts] = useState<Product[]>(fallbackProducts);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [cartItems, setCartItems] = useState<CartItem[]>(() => readStoredCart());
@@ -341,10 +351,12 @@ function useStorefrontCart(userId: string | null, userEmail: string | null): Sto
     setCheckoutError(null);
     setCheckingOut(true);
     try {
+      const token = userId && getAuthToken ? await getAuthToken() : null;
       await createCheckoutSession({
         items: cartItems,
         userId,
         userEmail,
+        token,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error inesperado en el checkout.";
@@ -724,6 +736,7 @@ function DashboardPage() {
 
 function CustomerDashboardPage() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const role = getUserRole(user);
   const location = useLocation();
   const adminAppUrl = getAdminAppUrl();
@@ -734,16 +747,16 @@ function CustomerDashboardPage() {
 
   useEffect(() => {
     const userId = user?.id;
-    const userEmail = user?.primaryEmailAddress?.emailAddress ?? null;
     if (!userId) return;
     const currentUserId = userId;
-    const currentUserEmail = userEmail;
 
     async function loadPurchases() {
       setLoadingPurchases(true);
       setPurchaseError(null);
       try {
-        const data = await fetchCustomerPurchases(currentUserId, currentUserEmail);
+        const token = await getToken();
+        if (!token) throw new Error("Tu sesión expiró. Inicia sesión nuevamente.");
+        const data = await fetchCustomerPurchases(currentUserId, token);
         setPurchases(data);
       } catch (error) {
         const message = error instanceof Error ? error.message : "No se pudieron cargar tus compras.";
@@ -754,7 +767,7 @@ function CustomerDashboardPage() {
     }
 
     void loadPurchases();
-  }, [user?.id, user?.primaryEmailAddress?.emailAddress]);
+  }, [getToken, user?.id]);
 
   const paidPurchases = purchases.filter((purchase) => purchase.status === "paid");
   const pendingPurchases = purchases.filter((purchase) => purchase.status === "pending");
@@ -992,9 +1005,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function AppWithClerk() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const cart = useStorefrontCart(
     user?.id ?? null,
     user?.primaryEmailAddress?.emailAddress ?? null,
+    getToken,
   );
 
   const authAction = user ? (
@@ -1009,16 +1024,17 @@ function AppWithClerk() {
 
   return (
     <RootLayout cart={cart}>
+      <NetworkStatus />
       <Routes>
-        <Route path="/" element={<HomePage {...cart} authAction={authAction} />} />
-        <Route path="/producto/:id" element={<ProductDetailPage {...cart} />} />
+        <Route path="/" element={<ErrorBoundary area="home"><HomePage {...cart} authAction={authAction} /></ErrorBoundary>} />
+        <Route path="/producto/:id" element={<ErrorBoundary area="productos"><ProductDetailPage {...cart} /></ErrorBoundary>} />
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/sign-up" element={<SignUpPage />} />
         <Route
           path="/dashboard"
           element={
             <RequireAuth>
-              <CustomerDashboardPage />
+              <ErrorBoundary area="dashboard"><CustomerDashboardPage /></ErrorBoundary>
             </RequireAuth>
           }
         />
@@ -1028,7 +1044,7 @@ function AppWithClerk() {
         <Route path="/terminos" element={<TerminosPage />} />
         <Route path="/privacidad" element={<PrivacidadPage />} />
         <Route path="/devoluciones" element={<DevolucionesPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </RootLayout>
   );
@@ -1042,6 +1058,7 @@ function AppWithoutClerk() {
   return (
     <>
       <ExperienceEffects />
+      <NetworkStatus />
       <header className="nav">
         <div className="container nav-inner">
           <Link to="/" className="brand" aria-label="Ir al inicio de UrbanSprout">
@@ -1078,17 +1095,17 @@ function AppWithoutClerk() {
         <Route
           path="/"
           element={
-            <HomePage
+            <ErrorBoundary area="home"><HomePage
               {...cart}
               authAction={
                 <button className="button button-outline" type="button" disabled>
                   Habilita Clerk para registro
                 </button>
               }
-            />
+            /></ErrorBoundary>
           }
         />
-        <Route path="/producto/:id" element={<ProductDetailPage {...cart} />} />
+        <Route path="/producto/:id" element={<ErrorBoundary area="productos"><ProductDetailPage {...cart} /></ErrorBoundary>} />
         <Route
           path="/sign-in"
           element={
@@ -1114,12 +1131,12 @@ function AppWithoutClerk() {
         <Route
           path="/dashboard"
           element={
-            <main className="container" style={{ paddingBlock: "2rem" }}>
+            <ErrorBoundary area="dashboard"><main className="container" style={{ paddingBlock: "2rem" }}>
               <section className="stack panel" style={{ maxWidth: "760px" }}>
                 <h1 className="section-title">Mi cuenta</h1>
                 <p>Activa Clerk con tus llaves reales para usar autenticación y panel de usuario.</p>
               </section>
-            </main>
+            </main></ErrorBoundary>
           }
         />
         <Route
@@ -1141,7 +1158,7 @@ function AppWithoutClerk() {
         <Route path="/terminos" element={<TerminosPage />} />
         <Route path="/privacidad" element={<PrivacidadPage />} />
         <Route path="/devoluciones" element={<DevolucionesPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       <SiteFooter />
     </>

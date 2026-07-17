@@ -210,7 +210,8 @@ test("api checkout: devuelve error controlado para producto inválido", async ({
   expect(response.status()).toBeGreaterThanOrEqual(400);
   expect(response.status()).toBeLessThan(600);
 
-  const body = (await response.json()) as { error?: string };
-  expect(typeof body.error).toBe("string");
-  expect(body.error?.length ?? 0).toBeGreaterThan(0);
+  const body = (await response.json()) as { error?: { code?: string; message?: string; details?: unknown } };
+  expect(body.error?.code).toBe("INVALID_INPUT");
+  expect(typeof body.error?.message).toBe("string");
+  expect(body.error).toHaveProperty("details");
 });

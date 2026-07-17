@@ -445,6 +445,10 @@ body {
   font-size: 0.85rem;
 }
 
+.form-field { display: flex; min-width: 0; flex-direction: column; gap: 0.25rem; }
+.form-error { color: #b42318; font-size: 0.8rem; line-height: 1.25; }
+[aria-invalid="true"] { border-color: #b42318 !important; box-shadow: 0 0 0 2px rgb(180 35 24 / 12%); }
+
 .form-group input,
 .form-group textarea {
   width: 100%;

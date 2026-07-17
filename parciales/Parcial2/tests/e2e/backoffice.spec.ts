@@ -29,11 +29,13 @@ test.describe("Backoffice admin", () => {
     await page.getByRole("button", { name: "+ Nuevo producto" }).click();
     await expect(page.getByRole("heading", { name: "Nuevo producto" })).toBeVisible();
 
-    // Guardar sin precio válido debe mostrar error.
+    // El precio inválido se reporta al perder el foco y bloquea el submit.
     await page.getByLabel("Nombre del producto *").fill("Kit sin precio");
     await page.getByLabel("Descripción *").fill("Producto de prueba");
-    await page.getByRole("button", { name: "Guardar producto" }).click();
-    await expect(page.getByText("El precio debe ser un número positivo.")).toBeVisible();
+    await page.getByLabel("Precio (USD) *").focus();
+    await page.getByLabel("Precio (USD) *").blur();
+    await expect(page.getByText("El precio debe ser mayor que cero.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Guardar producto" })).toBeDisabled();
 
     await page.getByRole("button", { name: "Cancelar" }).click();
     await expect(page.getByRole("heading", { name: "Nuevo producto" })).toHaveCount(0);

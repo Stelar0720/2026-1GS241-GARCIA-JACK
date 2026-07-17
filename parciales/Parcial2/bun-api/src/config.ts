@@ -40,6 +40,7 @@ export function validateApiEnvironment(source: EnvironmentSource = process.env) 
         "MCP_SUPPORT_KEY",
         "MCP_CLIENT_KEY",
         "MCP_CI_KEY",
+        "CLERK_SECRET_KEY",
       ]
     : [];
   const missing = required(source, requiredNames);
@@ -67,6 +68,7 @@ export function validateApiEnvironment(source: EnvironmentSource = process.env) 
       .map((origin) => origin.trim())
       .filter(Boolean),
     appUrl: appUrl || "http://localhost:3000",
+    clerkSecretKey: source.CLERK_SECRET_KEY?.trim() || "",
   };
 }
 

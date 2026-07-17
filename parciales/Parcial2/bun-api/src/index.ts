@@ -46,6 +46,19 @@ import {
 import type { AdminUserRole, AdminUserStatus } from "./db";
 import { calculateLineAmountUsd, canReserveStock, normalizeCheckoutLines, validateProductInput, type CheckoutLineInput } from "./business";
 import { apiConfig } from "./config";
+import { authenticateCustomer } from "./customer-auth";
+import {
+  adminUpdateSchema,
+  checkoutInputSchema,
+  formatValidationIssues,
+  inviteAdminSchema,
+  inventoryUpdateSchema,
+  orderStatusSchema,
+  productInputSchema,
+  safeId,
+} from "./validation";
+import { rateLimiter, requestIdentity, type RateLimitRule } from "./rate-limit";
+import { captureError, getErrorFeed, initializeObservability, queryLogs, resolveError, writeLog, type LogLevel, type ServiceName } from "./observability";
 
 const port = apiConfig.port;
 const uploadsDir = join(process.cwd(), "public", "uploads");
@@ -72,6 +85,27 @@ function jsonResponse(body: unknown, options: { status?: number; origin?: string
   });
 }
 
+type ApiErrorCode =
+  | "INVALID_INPUT"
+  | "NOT_FOUND"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "RATE_LIMITED"
+  | "CONFLICT"
+  | "SERVICE_UNAVAILABLE"
+  | "INTERNAL_ERROR";
+
+function errorResponse(
+  code: ApiErrorCode,
+  message: string,
+  options: { status: number; origin?: string | null; details?: Record<string, unknown> | null },
+) {
+  return jsonResponse(
+    { error: { code, message, details: options.details ?? null } },
+    { status: options.status, origin: options.origin },
+  );
+}
+
 // Resuelve el rol del request y valida el permiso requerido.
 // Devuelve el rol si está autorizado, o una Response de error (401/403) si no.
 function authorize(
@@ -84,19 +118,13 @@ function authorize(
 
   if (role === "public") {
     return {
-      error: jsonResponse(
-        { error: "Falta o es inválida la API key (Authorization: Bearer <key>)." },
-        { status: 401, origin },
-      ),
+      error: errorResponse("UNAUTHORIZED", "Falta o es inválida la API key (Authorization: Bearer <key>).", { status: 401, origin }),
     };
   }
 
   if (!roleHasPermission(role, permission)) {
     return {
-      error: jsonResponse(
-        { error: `El rol '${role}' no tiene el permiso '${permission}'.` },
-        { status: 403, origin },
-      ),
+      error: errorResponse("FORBIDDEN", `El rol '${role}' no tiene el permiso '${permission}'.`, { status: 403, origin, details: { permission } }),
     };
   }
 
@@ -336,8 +364,25 @@ async function cancelCheckoutForOrder(order: NonNullable<Awaited<ReturnType<type
 }
 
 await dbReady;
+await initializeObservability();
 
 const app = new Hono();
+
+app.onError(async (error, context) => {
+  await captureError({ service: "api", message: error.message, stack: error.stack, route: context.req.path, action: `${context.req.method} ${context.req.path}` }).catch(() => console.error("[api] Error no controlado", error));
+  return errorResponse("INTERNAL_ERROR", "Ocurrió un error interno.", {
+    status: 500,
+    origin: context.req.header("origin") ?? null,
+  });
+});
+
+app.use("*", async (context, next) => {
+  const startedAt = performance.now();
+  await next();
+  if (!context.req.path.startsWith("/observability/")) {
+    await writeLog({ level: context.res.status >= 500 ? "error" : context.res.status >= 400 ? "warn" : "info", service: "api", message: "http.request", context: { method: context.req.method, path: context.req.path, status: context.res.status, durationMs: Math.round(performance.now() - startedAt) } }).catch(() => undefined);
+  }
+});
 
 app.all("*", async (context) => {
     const req = context.req.raw;
@@ -348,6 +393,20 @@ app.all("*", async (context) => {
       return new Response(null, {
         status: 204,
         headers: getCorsHeaders(origin),
+      });
+    }
+
+    const rateLimit = rateLimiter.check(req.method, url.pathname, requestIdentity(req));
+    if (!rateLimit.allowed) {
+      return new Response(JSON.stringify({
+        error: {
+          code: "RATE_LIMITED",
+          message: "Demasiadas solicitudes. Intenta nuevamente más tarde.",
+          details: { retryAfter: rateLimit.retryAfter, limit: rateLimit.limit },
+        },
+      }), {
+        status: 429,
+        headers: { ...getCorsHeaders(origin), "Retry-After": String(rateLimit.retryAfter) },
       });
     }
 
@@ -370,12 +429,12 @@ app.all("*", async (context) => {
     if (req.method === "GET" && url.pathname.startsWith("/uploads/")) {
       const fileName = decodeURIComponent(url.pathname.split("/").at(-1) || "");
       if (!fileName || fileName.includes("/") || fileName.includes("\\")) {
-        return jsonResponse({ error: "Nombre de imagen inválido." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "Nombre de imagen inválido.", { status: 400, origin });
       }
 
       const filePath = join(uploadsDir, fileName);
       if (!existsSync(filePath)) {
-        return jsonResponse({ error: "Imagen no encontrada." }, { status: 404, origin });
+        return errorResponse("NOT_FOUND", "Imagen no encontrada.", { status: 404, origin });
       }
 
       return new Response(Bun.file(filePath), {
@@ -388,19 +447,21 @@ app.all("*", async (context) => {
     }
 
     if (req.method === "POST" && url.pathname === "/uploads/product-image") {
+      const auth = authorize(req, "catalog:write", origin);
+      if ("error" in auth) return auth.error;
       const formData = await req.formData();
       const image = formData.get("image");
 
       if (!(image instanceof File)) {
-        return jsonResponse({ error: "Debes seleccionar una imagen." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "Debes seleccionar una imagen.", { status: 400, origin });
       }
 
       if (!image.type.startsWith("image/")) {
-        return jsonResponse({ error: "El archivo debe ser una imagen." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "El archivo debe ser una imagen.", { status: 400, origin });
       }
 
       if (image.size > 5 * 1024 * 1024) {
-        return jsonResponse({ error: "La imagen no puede superar 5 MB." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "La imagen no puede superar 5 MB.", { status: 400, origin, details: { maxBytes: 5 * 1024 * 1024 } });
       }
 
       const fileName = makeUploadedImageName(image.name);
@@ -410,9 +471,15 @@ app.all("*", async (context) => {
     }
 
     if (req.method === "POST" && url.pathname === "/products") {
-      const parsed = validateProductInput((await req.json()) as Partial<ProductInput>);
-      if ("error" in parsed) {
-        return jsonResponse({ error: parsed.error }, { status: 400, origin });
+      const auth = authorize(req, "catalog:write", origin);
+      if ("error" in auth) return auth.error;
+      const parsed = productInputSchema.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) {
+        return errorResponse("INVALID_INPUT", "Producto inválido.", {
+          status: 400,
+          origin,
+          details: { issues: formatValidationIssues(parsed.error) },
+        });
       }
 
       const created = await createProduct(parsed.data);
@@ -423,18 +490,24 @@ app.all("*", async (context) => {
     if (url.pathname.startsWith("/products/")) {
       const productId = decodeURIComponent(url.pathname.split("/").at(-1) || "");
       if (!productId) {
-        return jsonResponse({ error: "ID de producto inválido." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "ID de producto inválido.", { status: 400, origin });
       }
 
       if (req.method === "PATCH") {
-        const parsed = validateProductInput((await req.json()) as Partial<ProductInput>);
-        if ("error" in parsed) {
-          return jsonResponse({ error: parsed.error }, { status: 400, origin });
+        const auth = authorize(req, "catalog:write", origin);
+        if ("error" in auth) return auth.error;
+        const parsed = productInputSchema.safeParse(await req.json().catch(() => null));
+        if (!parsed.success) {
+          return errorResponse("INVALID_INPUT", "Producto inválido.", {
+            status: 400,
+            origin,
+            details: { issues: formatValidationIssues(parsed.error) },
+          });
         }
 
         const product = await updateProduct(productId, parsed.data);
         if (!product) {
-          return jsonResponse({ error: "Producto no encontrado." }, { status: 404, origin });
+          return errorResponse("NOT_FOUND", "Producto no encontrado.", { status: 404, origin });
         }
 
         await recordAuditLog({ actor: "backoffice", action: "product.update", resource: productId });
@@ -442,9 +515,11 @@ app.all("*", async (context) => {
       }
 
       if (req.method === "DELETE") {
+        const auth = authorize(req, "catalog:write", origin);
+        if ("error" in auth) return auth.error;
         const deleted = await deleteProduct(productId);
         if (!deleted) {
-          return jsonResponse({ error: "Producto no encontrado." }, { status: 404, origin });
+          return errorResponse("NOT_FOUND", "Producto no encontrado.", { status: 404, origin });
         }
 
         await recordAuditLog({ actor: "backoffice", action: "product.delete", resource: productId });
@@ -453,25 +528,31 @@ app.all("*", async (context) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/checkout") {
-      if (!stripeClient) {
-        return jsonResponse(
-          { error: "Configura STRIPE_SECRET_KEY para habilitar checkout." },
-          { status: 503, origin },
-        );
+      const parsedBody = checkoutInputSchema.safeParse(await req.json().catch(() => null));
+      if (!parsedBody.success) {
+        return errorResponse("INVALID_INPUT", "Datos de checkout inválidos.", { status: 400, origin, details: { issues: formatValidationIssues(parsedBody.error) } });
       }
+      const body = parsedBody.data;
 
-      const body = (await req.json()) as {
-        productId?: string;
-        items?: { productId?: string; quantity?: number }[];
-        userId?: string | null;
-        userEmail?: string | null;
-      };
+      if (body.userId) {
+        const identity = await authenticateCustomer(req);
+        if (!identity) {
+          return errorResponse("UNAUTHORIZED", "Se requiere una sesión válida para comprar con una cuenta.", { status: 401, origin });
+        }
+        if (identity.userId !== body.userId) {
+          return errorResponse("FORBIDDEN", "No puedes crear una compra para otro cliente.", { status: 403, origin });
+        }
+      }
 
       const parsedLines = await buildCheckoutLines(normalizeCheckoutLines(body));
       if ("error" in parsedLines) {
-        return jsonResponse({ error: parsedLines.error }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", parsedLines.error ?? "Carrito inválido.", { status: 400, origin });
       }
       const checkoutLines = parsedLines.data;
+
+      if (!stripeClient) {
+        return errorResponse("SERVICE_UNAVAILABLE", "Configura STRIPE_SECRET_KEY para habilitar checkout.", { status: 503, origin });
+      }
 
       const storefrontUrl = apiConfig.appUrl;
       const normalizedEmail = body.userEmail?.trim().toLowerCase() || undefined;
@@ -532,14 +613,17 @@ app.all("*", async (context) => {
         }
         const message =
           error instanceof Error ? error.message : "Error al crear la sesión de Stripe.";
-        return jsonResponse(
-          { error: message },
-          { status: message.includes("Stock insuficiente") ? 409 : 500, origin },
-        );
+        const stockConflict = message.includes("Stock insuficiente");
+        return errorResponse(stockConflict ? "CONFLICT" : "INTERNAL_ERROR", message, {
+          status: stockConflict ? 409 : 500,
+          origin,
+        });
       }
     }
 
     if (req.method === "GET" && url.pathname === "/orders") {
+      const auth = authorize(req, "orders:read", origin);
+      if ("error" in auth) return auth.error;
       await refreshPendingOrdersWithStripe();
       return jsonResponse({ data: await listOrders() }, { origin });
     }
@@ -548,39 +632,44 @@ app.all("*", async (context) => {
       const segments = url.pathname.split("/");
       const buyerId = decodeURIComponent(segments[2] || "").trim();
       if (!buyerId) {
-        return jsonResponse({ error: "ID de cliente inválido." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "ID de cliente inválido.", { status: 400, origin });
       }
-      const buyerEmail = url.searchParams.get("email");
+      const parsedBuyerId = safeId.safeParse(buyerId);
+      if (!parsedBuyerId.success) return errorResponse("INVALID_INPUT", "Formato de ID inválido.", { status: 400, origin });
+      const identity = await authenticateCustomer(req);
+      if (!identity) return errorResponse("UNAUTHORIZED", "Se requiere una sesión válida.", { status: 401, origin });
+      if (identity.userId !== parsedBuyerId.data) return errorResponse("FORBIDDEN", "No puedes consultar datos de otro cliente.", { status: 403, origin });
 
       await refreshPendingOrdersWithStripe();
-      await syncBuyerOrdersWithStripe(buyerId, buyerEmail);
-      return jsonResponse({ data: await listOrdersByBuyer(buyerId, buyerEmail) }, { origin });
+      await syncBuyerOrdersWithStripe(identity.userId, null);
+      return jsonResponse({ data: await listOrdersByBuyer(identity.userId) }, { origin });
     }
 
     if (req.method === "PATCH" && url.pathname.startsWith("/orders/")) {
+      const auth = authorize(req, "orders:cancel", origin);
+      if ("error" in auth) return auth.error;
       const orderId = url.pathname.split("/").at(-1);
       if (!orderId) {
-        return jsonResponse({ error: "ID de orden inválido." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "ID de orden inválido.", { status: 400, origin });
       }
 
-      const body = (await req.json()) as { status?: OrderStatus };
-      if (!body.status || !["pending", "paid", "cancelled"].includes(body.status)) {
-        return jsonResponse({ error: "Estado de orden inválido." }, { status: 400, origin });
+      const parsedStatus = orderStatusSchema.safeParse(await req.json().catch(() => null));
+      if (!parsedStatus.success) {
+        return errorResponse("INVALID_INPUT", "Estado de orden inválido.", { status: 400, origin, details: { issues: formatValidationIssues(parsedStatus.error) } });
       }
+      const body = parsedStatus.data;
 
       const order = await getOrderById(orderId);
       if (!order) {
-        return jsonResponse({ error: "Orden no encontrada." }, { status: 404, origin });
+        return errorResponse("NOT_FOUND", "Orden no encontrada.", { status: 404, origin });
       }
       if (body.status === "cancelled") {
         try {
           await cancelCheckoutForOrder(order);
         } catch (error) {
           const message = error instanceof Error ? error.message : "No se pudo cancelar el checkout.";
-          return jsonResponse(
-            { error: message },
-            { status: message.startsWith("Stripe no está configurado") ? 503 : 409, origin },
-          );
+          const unavailable = message.startsWith("Stripe no está configurado");
+          return errorResponse(unavailable ? "SERVICE_UNAVAILABLE" : "CONFLICT", message, { status: unavailable ? 503 : 409, origin });
         }
       } else {
         await updateOrderStatus(orderId, body.status);
@@ -590,44 +679,43 @@ app.all("*", async (context) => {
     }
 
     if (req.method === "GET" && url.pathname === "/inventory") {
+      const auth = authorize(req, "catalog:read", origin);
+      if ("error" in auth) return auth.error;
       return jsonResponse({ data: await listInventory() }, { origin });
     }
 
     if (req.method === "GET" && url.pathname === "/inventory/alerts") {
+      const auth = authorize(req, "catalog:read", origin);
+      if ("error" in auth) return auth.error;
       return jsonResponse({ data: await listStockAlerts() }, { origin });
     }
 
     if (req.method === "PATCH" && url.pathname.startsWith("/inventory/")) {
+      const auth = authorize(req, "catalog:write", origin);
+      if ("error" in auth) return auth.error;
       const sku = decodeURIComponent(url.pathname.split("/").at(-1) || "");
       if (!sku) {
-        return jsonResponse({ error: "SKU inválido." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "SKU inválido.", { status: 400, origin });
       }
 
-      const body = (await req.json()) as { stock?: number; minimumStock?: number };
-      const stock = body.stock;
-      if (typeof stock !== "number" || !Number.isInteger(stock) || stock < 0) {
-        return jsonResponse({ error: "Stock debe ser un entero positivo." }, { status: 400, origin });
+      const parsedInventory = inventoryUpdateSchema.safeParse(await req.json().catch(() => null));
+      if (!parsedInventory.success) {
+        return errorResponse("INVALID_INPUT", "Inventario inválido.", { status: 400, origin, details: { issues: formatValidationIssues(parsedInventory.error) } });
       }
-      if (body.minimumStock !== undefined && (!Number.isInteger(body.minimumStock) || body.minimumStock < 0)) {
-        return jsonResponse({ error: "Stock mínimo debe ser un entero positivo." }, { status: 400, origin });
-      }
-
-      await updateInventory({ sku, stock, minimumStock: body.minimumStock });
-      await recordAuditLog({ actor: "backoffice", action: "inventory.update", resource: sku, details: `stock=${stock}` });
+      const body = parsedInventory.data;
+      await updateInventory({ sku, stock: body.stock, minimumStock: body.minimumStock });
+      await recordAuditLog({ actor: "backoffice", action: "inventory.update", resource: sku, details: `stock=${body.stock}` });
       return jsonResponse({ ok: true }, { origin });
     }
 
     if (req.method === "POST" && url.pathname === "/webhooks/stripe") {
       if (!stripeClient || !stripeWebhookSecret) {
-        return jsonResponse(
-          { error: "Configura STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET para webhooks." },
-          { status: 503, origin },
-        );
+        return errorResponse("SERVICE_UNAVAILABLE", "Configura STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET para webhooks.", { status: 503, origin });
       }
 
       const signature = req.headers.get("stripe-signature");
       if (!signature) {
-        return jsonResponse({ error: "Falta Stripe-Signature." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "Falta Stripe-Signature.", { status: 400, origin });
       }
 
       const payload = await req.text();
@@ -637,7 +725,7 @@ app.all("*", async (context) => {
         event = stripeClient.webhooks.constructEvent(payload, signature, stripeWebhookSecret);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Firma inválida de Stripe.";
-        return jsonResponse({ error: message }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", message, { status: 400, origin });
       }
 
       const processed = await processStripeEventAtomically(event.id, event.type, async (dbSession) => {
@@ -677,6 +765,67 @@ app.all("*", async (context) => {
       return jsonResponse({ data: ROLE_PERMISSIONS }, { origin });
     }
 
+    if (req.method === "POST" && (url.pathname === "/observability/logs" || url.pathname === "/observability/errors")) {
+      const rawBody = await req.text();
+      if (rawBody.length > 32_768) {
+        return errorResponse("INVALID_INPUT", "El evento de observabilidad supera 32 KB.", { status: 413, origin });
+      }
+      let body: Record<string, unknown> | null = null;
+      try { body = JSON.parse(rawBody) as Record<string, unknown>; } catch { body = null; }
+      const services: ServiceName[] = ["api", "storefront", "backoffice", "mcp"];
+      const levels: LogLevel[] = ["info", "warn", "error"];
+      if (!body || typeof body.message !== "string" || body.message.length < 1 || body.message.length > 1_000 || !services.includes(body.service as ServiceName)) return errorResponse("INVALID_INPUT", "Evento de observabilidad invÃ¡lido.", { status: 400, origin });
+      if (url.pathname.endsWith("/errors")) {
+        const context = body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : {};
+        const tracked = await captureError({ service: body.service as ServiceName, message: typeof context.errorMessage === "string" ? context.errorMessage : body.message, stack: typeof context.stack === "string" ? context.stack : null, route: typeof body.route === "string" ? body.route : null, userId: null, action: typeof context.action === "string" ? context.action : null, context });
+        return jsonResponse({ data: { fingerprint: tracked?.fingerprint } }, { status: 202, origin });
+      }
+      if (!levels.includes(body.level as LogLevel)) return errorResponse("INVALID_INPUT", "Nivel de log invÃ¡lido.", { status: 400, origin });
+      await writeLog({ level: body.level as LogLevel, service: body.service as ServiceName, message: body.message, context: body.context });
+      return jsonResponse({ accepted: true }, { status: 202, origin });
+    }
+
+    if (req.method === "GET" && url.pathname === "/observability/logs") {
+      const auth = authorize(req, "logs:read", origin); if ("error" in auth) return auth.error;
+      return jsonResponse({ data: await queryLogs({ service: url.searchParams.get("service") as ServiceName || undefined, level: url.searchParams.get("level") as LogLevel || undefined, from: url.searchParams.get("from") || undefined, to: url.searchParams.get("to") || undefined, limit: Number(url.searchParams.get("limit")) || undefined }) }, { origin });
+    }
+    if (req.method === "GET" && url.pathname === "/observability/errors") {
+      const auth = authorize(req, "errors:read", origin); if ("error" in auth) return auth.error;
+      return jsonResponse({ data: await getErrorFeed({ status: url.searchParams.get("status") as "open" | "resolved" || undefined, service: url.searchParams.get("service") as ServiceName || undefined, limit: Number(url.searchParams.get("limit")) || undefined }) }, { origin });
+    }
+    if (req.method === "PATCH" && url.pathname.startsWith("/observability/errors/") && url.pathname.endsWith("/resolve")) {
+      const auth = authorize(req, "errors:resolve", origin); if ("error" in auth) return auth.error;
+      const fingerprint = decodeURIComponent(url.pathname.split("/")[3] || ""); const tracked = await resolveError(fingerprint);
+      return tracked ? jsonResponse({ data: tracked }, { origin }) : errorResponse("NOT_FOUND", "Error no encontrado.", { status: 404, origin });
+    }
+
+    // Configuración en memoria ajustable en runtime (HU-026). En una réplica
+    // académica no requiere Redis; reiniciar restaura los límites seguros.
+    if (url.pathname === "/rate-limits" && req.method === "GET") {
+      const role = resolveRole(extractBearerKey(req.headers.get("authorization")));
+      if (role !== "admin") return errorResponse(role === "public" ? "UNAUTHORIZED" : "FORBIDDEN", "Solo un administrador puede consultar rate limits.", { status: role === "public" ? 401 : 403, origin });
+      return jsonResponse({ data: rateLimiter.list(), storage: "memory" }, { origin });
+    }
+
+    if (url.pathname === "/rate-limits" && req.method === "POST") {
+      const role = resolveRole(extractBearerKey(req.headers.get("authorization")));
+      if (role !== "admin") return errorResponse(role === "public" ? "UNAUTHORIZED" : "FORBIDDEN", "Solo un administrador puede configurar rate limits.", { status: role === "public" ? 401 : 403, origin });
+      const body = (await req.json()) as Partial<RateLimitRule>;
+      try {
+        const rule = rateLimiter.configure({
+          method: body.method ?? "",
+          path: body.path ?? "",
+          limit: body.limit ?? 0,
+          windowSeconds: body.windowSeconds ?? 0,
+          ...(body.identity?.trim() ? { identity: body.identity.trim() } : {}),
+        });
+        await recordAuditLog({ actor: role, action: "rate-limit.configure", resource: `${rule.method} ${rule.path}`, details: JSON.stringify(rule) });
+        return jsonResponse({ data: rule, appliedWithoutRestart: true }, { origin });
+      } catch (error) {
+        return errorResponse("INVALID_INPUT", error instanceof Error ? error.message : "Configuración inválida.", { status: 400, origin });
+      }
+    }
+
     // Verifica si un rol tiene un permiso (HU-025, authorize_user).
     if (req.method === "POST" && url.pathname === "/auth/authorize") {
       const auth = authorize(req, "auth:read", origin);
@@ -684,10 +833,10 @@ app.all("*", async (context) => {
 
       const body = (await req.json()) as { role?: Role; permission?: Permission };
       if (!body.role || !body.permission) {
-        return jsonResponse({ error: "Se requieren 'role' y 'permission'." }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", "Se requieren 'role' y 'permission'.", { status: 400, origin });
       }
       if (!(body.role in ROLE_PERMISSIONS)) {
-        return jsonResponse({ error: `Rol desconocido: ${body.role}.` }, { status: 400, origin });
+        return errorResponse("INVALID_INPUT", `Rol desconocido: ${body.role}.`, { status: 400, origin, details: { field: "role" } });
       }
 
       return jsonResponse(
@@ -705,22 +854,22 @@ app.all("*", async (context) => {
     if (url.pathname === "/admin/users/invite" && req.method === "POST") {
       const auth = authorize(req, "users:manage", origin);
       if ("error" in auth) return auth.error;
-      const body = (await req.json()) as { name?: string; email?: string; role?: AdminUserRole };
-      const name = body.name?.trim();
-      const email = body.email?.trim().toLowerCase();
-      if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return jsonResponse({ error: "Nombre y email válido son requeridos." }, { status: 400, origin });
+      const parsed = inviteAdminSchema.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) {
+        return errorResponse("INVALID_INPUT", "Datos de invitación inválidos.", {
+          status: 400,
+          origin,
+          details: { issues: formatValidationIssues(parsed.error) },
+        });
       }
-      if (body.role !== "support" && body.role !== "admin") {
-        return jsonResponse({ error: "El rol debe ser support o admin." }, { status: 400, origin });
-      }
+      const { name, email, role } = parsed.data;
       try {
-        const user = await inviteAdminUser({ name, email, role: body.role });
+        const user = await inviteAdminUser({ name, email, role });
         await recordAuditLog({ actor: auth.role, action: "user.invite", resource: user.id, details: email });
         return jsonResponse({ data: user }, { status: 201, origin });
       } catch (error) {
         if (error instanceof Error && error.message.includes("E11000")) {
-          return jsonResponse({ error: "Ya existe un usuario con ese email." }, { status: 409, origin });
+          return errorResponse("CONFLICT", "Ya existe un usuario con ese email.", { status: 409, origin, details: { field: "email" } });
         }
         throw error;
       }
@@ -730,18 +879,17 @@ app.all("*", async (context) => {
     if (adminUserMatch && req.method === "PATCH") {
       const auth = authorize(req, "users:manage", origin);
       if ("error" in auth) return auth.error;
-      const body = (await req.json()) as { role?: AdminUserRole; status?: AdminUserStatus };
-      if (body.role !== undefined && body.role !== "support" && body.role !== "admin") {
-        return jsonResponse({ error: "Rol inválido." }, { status: 400, origin });
+      const parsed = adminUpdateSchema.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) {
+        return errorResponse("INVALID_INPUT", "Actualización de usuario inválida.", {
+          status: 400,
+          origin,
+          details: { issues: formatValidationIssues(parsed.error) },
+        });
       }
-      if (body.status !== undefined && !["invited", "active", "suspended"].includes(body.status)) {
-        return jsonResponse({ error: "Estado inválido." }, { status: 400, origin });
-      }
-      if (body.role === undefined && body.status === undefined) {
-        return jsonResponse({ error: "Envía role o status." }, { status: 400, origin });
-      }
+      const body = parsed.data;
       const user = await updateAdminUser(decodeURIComponent(adminUserMatch[1]), body);
-      if (!user) return jsonResponse({ error: "Usuario no encontrado." }, { status: 404, origin });
+      if (!user) return errorResponse("NOT_FOUND", "Usuario no encontrado.", { status: 404, origin });
       await recordAuditLog({ actor: auth.role, action: body.status === "suspended" ? "user.suspend" : "user.update", resource: user.id, details: JSON.stringify(body) });
       return jsonResponse({ data: user }, { origin });
     }
@@ -810,23 +958,22 @@ app.all("*", async (context) => {
       const orderId = decodeURIComponent(url.pathname.split("/")[2] || "");
       const order = await getOrderById(orderId);
       if (!order) {
-        return jsonResponse({ error: "Orden no encontrada." }, { status: 404, origin });
+        return errorResponse("NOT_FOUND", "Orden no encontrada.", { status: 404, origin });
       }
       if (order.status !== "pending") {
-        return jsonResponse(
-          { error: `No se puede cancelar una orden en estado '${order.status}'. Solo 'pending'.` },
-          { status: 409, origin },
-        );
+        return errorResponse("CONFLICT", `No se puede cancelar una orden en estado '${order.status}'. Solo 'pending'.`, {
+          status: 409,
+          origin,
+          details: { currentStatus: order.status },
+        });
       }
 
       try {
         await cancelCheckoutForOrder(order);
       } catch (error) {
         const message = error instanceof Error ? error.message : "No se pudo cancelar el checkout.";
-        return jsonResponse(
-          { error: message },
-          { status: message.startsWith("Stripe no está configurado") ? 503 : 409, origin },
-        );
+        const unavailable = message.startsWith("Stripe no está configurado");
+        return errorResponse(unavailable ? "SERVICE_UNAVAILABLE" : "CONFLICT", message, { status: unavailable ? 503 : 409, origin });
       }
       await recordAuditLog({ actor: auth.role, action: "order.cancel", resource: orderId });
       return jsonResponse({ ok: true, order: await getOrderById(orderId) }, { origin });
@@ -847,7 +994,7 @@ app.all("*", async (context) => {
       );
     }
 
-    return jsonResponse({ error: "Ruta no encontrada." }, { status: 404, origin });
+    return errorResponse("NOT_FOUND", "Ruta no encontrada.", { status: 404, origin, details: { path: url.pathname } });
   });
 
 Bun.serve({

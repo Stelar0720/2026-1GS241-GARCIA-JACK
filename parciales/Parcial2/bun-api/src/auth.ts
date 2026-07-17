@@ -7,7 +7,7 @@
 // backoffice siguen usando los endpoints abiertos (internos); los endpoints
 // nuevos y sensibles (reports, export, audit, cancel, sync, auth) exigen key.
 
-export type Role = "public" | "client" | "support" | "admin" | "ci";
+export type Role = "public" | "client" | "support" | "admin" | "developer" | "ci";
 
 export type Permission =
   | "catalog:read"
@@ -19,6 +19,9 @@ export type Permission =
   | "reports:read"
   | "export:read"
   | "audit:read"
+  | "logs:read"
+  | "errors:read"
+  | "errors:resolve"
   | "auth:read"
   | "users:manage"
   | "qa:run";
@@ -28,6 +31,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   client: ["orders:cancel"],
   support: ["catalog:read", "orders:read", "auth:read"],
   ci: ["qa:run"],
+  developer: ["logs:read", "errors:read", "errors:resolve"],
   admin: [
     "catalog:read",
     "catalog:write",
@@ -38,6 +42,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "reports:read",
     "export:read",
     "audit:read",
+    "logs:read",
+    "errors:read",
+    "errors:resolve",
     "auth:read",
     "users:manage",
   ],
@@ -52,6 +59,7 @@ function buildKeyRoleMap(): Map<string, Role> {
     [process.env.MCP_SUPPORT_KEY?.trim(), "support"],
     [process.env.MCP_CLIENT_KEY?.trim(), "client"],
     [process.env.MCP_CI_KEY?.trim(), "ci"],
+    [process.env.MCP_DEVELOPER_KEY?.trim(), "developer"],
   ];
   for (const [key, role] of entries) {
     if (key) map.set(key, role);

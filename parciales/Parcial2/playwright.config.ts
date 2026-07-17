@@ -52,6 +52,7 @@ export default defineConfig({
         ...process.env,
         VITE_E2E: "true",
         VITE_API_URL: "http://localhost:4010",
+        VITE_E2E_ADMIN_KEY: "e2e-admin-key",
       },
       reuseExistingServer: false,
       timeout: 120_000,

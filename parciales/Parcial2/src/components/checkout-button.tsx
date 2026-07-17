@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getApiErrorMessage, type ApiErrorBody } from "@/lib/api-error";
 
 type CheckoutButtonProps = {
   productId: string;
@@ -23,16 +24,16 @@ export function CheckoutButton({ productId, userId, userEmail, disabled = false 
       });
 
       const rawBody = await response.text();
-      let parsedBody: { error?: string; checkoutUrl?: string } | null = null;
+      let parsedBody: ({ checkoutUrl?: string } & ApiErrorBody) | null = null;
 
       try {
-        parsedBody = JSON.parse(rawBody) as { error?: string; checkoutUrl?: string };
+        parsedBody = JSON.parse(rawBody) as { checkoutUrl?: string } & ApiErrorBody;
       } catch {
         parsedBody = null;
       }
 
       if (!response.ok) {
-        throw new Error(parsedBody?.error ?? "No se pudo iniciar el checkout.");
+        throw new Error(getApiErrorMessage(parsedBody, "No se pudo iniciar el checkout."));
       }
 
       if (!parsedBody?.checkoutUrl) {

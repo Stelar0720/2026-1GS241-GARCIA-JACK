@@ -13,6 +13,7 @@ const production = {
   MCP_SUPPORT_KEY: "support-value",
   MCP_CLIENT_KEY: "client-value",
   MCP_CI_KEY: "ci-value",
+  CLERK_SECRET_KEY: "sk_test_clerk",
 };
 
 describe("validateApiEnvironment", () => {
