@@ -6,6 +6,8 @@ export type Product = {
   description: string;
   priceUsd: number;
   tag: string;
+  category?: string;
+  tags?: string[];
   imageUrl: string;
   active: number;
   stock: number;
@@ -20,6 +22,8 @@ export const fallbackProducts: Product[] = [
     name: "Kit balcón básico",
     description: "Lechuga, cilantro y cebollín para espacios con 2-3 horas de luz.",
     priceUsd: 24.9,
+    category: "Hortalizas",
+    tags: ["Principiantes", "Balcon"],
     tag: "Inicio",
     imageUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&h=300&fit=crop",
     active: 1,
@@ -32,6 +36,8 @@ export const fallbackProducts: Product[] = [
     name: "Kit microverde rápido",
     description: "Microbrotes listos en 7-10 días, ideal para cocinas en apartamentos.",
     priceUsd: 29.9,
+    category: "Microverdes",
+    tags: ["Cosecha rapida", "Interior"],
     tag: "Más vendido",
     imageUrl: "https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?w=400&h=300&fit=crop",
     active: 1,
@@ -44,6 +50,8 @@ export const fallbackProducts: Product[] = [
     name: "Kit aromáticas compacto",
     description: "Albahaca, menta y perejil con guía de poda y riego urbano.",
     priceUsd: 34.9,
+    category: "Aromaticas",
+    tags: ["Cocina", "Compacto"],
     tag: "Premium",
     imageUrl: "https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?w=400&h=300&fit=crop",
     active: 1,

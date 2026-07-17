@@ -109,3 +109,37 @@ test("rate limiting: se configura sin reiniciar y responde Retry-After", async (
   expect(Number(limited.headers()["retry-after"])).toBeGreaterThan(0);
   expect(((await limited.json()) as { error: { code: string } }).error.code).toBe("RATE_LIMITED");
 });
+
+test("commerce taxonomy and deterministic coupon", async ({ request }) => {
+  const taxonomy = await request.get(`${API_URL}/products/taxonomy`);
+  expect(taxonomy.status()).toBe(200);
+  const taxonomyBody = (await taxonomy.json()) as { data: { categories: string[]; tags: string[] } };
+  expect(taxonomyBody.data.categories.length).toBeGreaterThan(1);
+  expect(taxonomyBody.data.tags.length).toBeGreaterThan(1);
+  const coupon = await request.post(`${API_URL}/coupons/validate`, { data: { code: "welcome10", subtotalUsd: 100 } });
+  expect(coupon.status()).toBe(200);
+  expect(await coupon.json()).toMatchObject({ data: { code: "WELCOME10", discountUsd: 10, totalUsd: 90 } });
+});
+
+test("wishlist isolates authenticated customers", async ({ request }) => {
+  const productsResponse = await request.get(`${API_URL}/products`);
+  const productId = ((await productsResponse.json()) as { data: { id: string }[] }).data[0].id;
+  const headers = { Authorization: "Bearer e2e-client-key", "X-Customer-Id": "e2e-customer-a" };
+  expect((await request.post(`${API_URL}/wishlist/${productId}`, { headers })).status()).toBe(201);
+  const own = await request.get(`${API_URL}/wishlist`, { headers });
+  expect(((await own.json()) as { data: { id: string }[] }).data.map((item) => item.id)).toContain(productId);
+  const other = await request.get(`${API_URL}/wishlist`, { headers: { Authorization: "Bearer e2e-client-key", "X-Customer-Id": "e2e-customer-b" } });
+  expect(((await other.json()) as { data: unknown[] }).data).toHaveLength(0);
+  expect((await request.delete(`${API_URL}/wishlist/${productId}`, { headers })).status()).toBe(200);
+});
+
+test("reviews are public but creation requires a verified purchase", async ({ request }) => {
+  const productsResponse = await request.get(`${API_URL}/products`);
+  const productId = ((await productsResponse.json()) as { data: { id: string }[] }).data[0].id;
+  expect((await request.get(`${API_URL}/products/${productId}/reviews`)).status()).toBe(200);
+  const rejected = await request.post(`${API_URL}/products/${productId}/reviews`, {
+    headers: { Authorization: "Bearer e2e-client-key", "X-Customer-Id": "e2e-customer-no-purchase" },
+    data: { rating: 5, comment: "Un kit excelente para el apartamento." },
+  });
+  expect(rejected.status()).toBe(403);
+});

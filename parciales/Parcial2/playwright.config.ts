@@ -23,6 +23,7 @@ export default defineConfig({
       env: {
         ...process.env,
         API_PORT: "4010",
+        APP_ENV: "test",
         MONGODB_URI: "mongodb://127.0.0.1:27018/?replicaSet=rs-e2e&directConnection=true",
         MONGODB_DATABASE: "urbansprout_e2e",
         ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173",

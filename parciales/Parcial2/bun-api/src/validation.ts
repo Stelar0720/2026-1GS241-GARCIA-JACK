@@ -15,7 +15,32 @@ export const productInputSchema = z.object({
   description: safeText(2_000, 1),
   priceUsd: z.number().finite().positive().max(100_000),
   tag: safeText(80).default(""),
+  category: safeText(80).default(""),
+  tags: z.array(safeText(40, 1)).max(10).default([]),
   imageUrl: z.union([z.literal(""), z.url().max(2_048)]).default(""),
+}).strict();
+
+export const couponValidationSchema = z.object({
+  code: safeText(32, 1).transform((value) => value.toUpperCase()),
+  subtotalUsd: z.number().finite().positive().max(1_000_000),
+}).strict();
+
+export const couponInputSchema = z.object({
+  code: safeText(32, 1).transform((value) => value.toUpperCase()),
+  type: z.enum(["percent", "fixed"]),
+  value: z.number().finite().positive().max(100_000),
+  minimumUsd: z.number().finite().min(0).max(1_000_000).default(0),
+  expiresAt: z.iso.datetime().nullable().default(null),
+  active: z.boolean().default(true),
+}).strict().superRefine((value, ctx) => {
+  if (value.type === "percent" && value.value > 100) ctx.addIssue({ code: "custom", path: ["value"], message: "El porcentaje no puede superar 100." });
+});
+
+export const wishlistInputSchema = z.object({ productId: safeId }).strict();
+
+export const reviewInputSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: safeText(1_000, 1),
 }).strict();
 
 export const checkoutInputSchema = z.object({
@@ -23,6 +48,7 @@ export const checkoutInputSchema = z.object({
   items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(99) }).strict()).min(1).max(50).optional(),
   userId: safeId.nullish(),
   userEmail: z.email().max(254).transform((value) => value.trim().toLowerCase()).nullish(),
+  couponCode: safeText(32, 1).transform((value) => value.toUpperCase()).nullish(),
 }).strict().refine((value) => Boolean(value.productId || value.items?.length), "El carrito no puede estar vacío.");
 
 export const inviteAdminSchema = z.object({

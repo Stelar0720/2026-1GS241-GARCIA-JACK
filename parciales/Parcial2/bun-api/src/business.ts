@@ -35,3 +35,9 @@ export function calculateLineAmountUsd(priceUsd: number, quantity: number) {
 export function canReserveStock(stock: number, quantity: number) {
   return Number.isInteger(stock) && stock >= 0 && Number.isInteger(quantity) && quantity > 0 && stock >= quantity;
 }
+
+export function calculateCouponDiscount(subtotalUsd: number, coupon: { type: "percent" | "fixed"; value: number }) {
+  if (!Number.isFinite(subtotalUsd) || subtotalUsd <= 0) throw new Error("Subtotal inválido.");
+  const raw = coupon.type === "percent" ? subtotalUsd * coupon.value / 100 : coupon.value;
+  return Number(Math.min(subtotalUsd, Math.max(0, raw)).toFixed(2));
+}

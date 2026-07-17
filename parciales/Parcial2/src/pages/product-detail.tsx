@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { Product } from "@/lib/catalog";
 import { getProductExtra } from "@/lib/content";
 import { Stars } from "@/components/home-sections";
+import { Reviews, WishlistButton } from "@/components/commerce";
 
 type ProductDetailProps = {
   products: Product[];
@@ -75,7 +76,9 @@ export function ProductDetailPage({
 
           <div className="detail-info glass">
             <div className="detail-pills">
+              {product.category ? <span className="pill">{product.category}</span> : null}
               {product.tag ? <span className="pill">{product.tag}</span> : null}
+              {product.tags?.map((tag) => <span className="pill" key={tag}>{tag}</span>)}
               <span className="pill">Nivel: {extra.level}</span>
             </div>
             <h1>{product.name}</h1>
@@ -117,6 +120,7 @@ export function ProductDetailPage({
                 Seguir explorando
               </Link>
             </div>
+            <WishlistButton productId={product.id} />
             <p className="detail-guarantee">✓ Garantía de germinación 30 días · ✓ Envío 24–48 h</p>
           </div>
         </section>
@@ -152,6 +156,7 @@ export function ProductDetailPage({
           <blockquote>“{extra.testimonial.text}”</blockquote>
           <p className="meta">— {extra.testimonial.name}</p>
         </section>
+        <Reviews productId={product.id} />
 
         {related.length > 0 ? (
           <section className="related">

@@ -23,6 +23,8 @@ import { ProductDetailPage } from "@/pages/product-detail";
 import { DevolucionesPage, PrivacidadPage, TerminosPage } from "@/pages/legal";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { NetworkStatus, NotFoundPage } from "@/components/system-status";
+import { WishlistButton, WishlistPanel } from "@/components/commerce";
+import { commerceApi } from "@/lib/commerce";
 
 type PurchaseStatus = "pending" | "paid" | "cancelled";
 type ThemeMode = "light" | "dark";
@@ -59,6 +61,10 @@ type StorefrontCart = {
   cartLines: CartLine[];
   cartCount: number;
   cartTotal: number;
+  couponCode: string;
+  couponDiscount: number;
+  couponMessage: string | null;
+  applyingCoupon: boolean;
   checkoutError: string | null;
   checkingOut: boolean;
   lastAddedProductId: string | null;
@@ -66,6 +72,7 @@ type StorefrontCart = {
   addToCart: (product: Product) => void;
   viewCart: () => void;
   updateCartQuantity: (productId: string, quantity: number) => void;
+  applyCoupon: (code: string) => Promise<void>;
   checkoutCart: () => Promise<void>;
 };
 
@@ -211,6 +218,7 @@ async function createCheckoutSession(params: {
   userId: string | null;
   userEmail: string | null;
   token?: string | null;
+  couponCode?: string | null;
 }) {
   const response = await fetch("/api/checkout", {
     method: "POST",
@@ -218,7 +226,7 @@ async function createCheckoutSession(params: {
       "Content-Type": "application/json",
       ...(params.token ? { Authorization: `Bearer ${params.token}` } : {}),
     },
-    body: JSON.stringify({ items: params.items, userId: params.userId, userEmail: params.userEmail }),
+    body: JSON.stringify({ items: params.items, userId: params.userId, userEmail: params.userEmail, couponCode: params.couponCode }),
   });
 
   const rawBody = await response.text();
@@ -271,6 +279,10 @@ function useStorefrontCart(
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastAddedProductId, setLastAddedProductId] = useState<string | null>(null);
   const [openCartSignal, setOpenCartSignal] = useState(0);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponMessage, setCouponMessage] = useState<string | null>(null);
+  const [applyingCoupon, setApplyingCoupon] = useState(false);
 
   async function loadProducts() {
     try {
@@ -336,6 +348,7 @@ function useStorefrontCart(
   }
 
   function updateCartQuantity(productId: string, quantity: number) {
+    setCouponDiscount(0); setCouponCode(""); setCouponMessage(null);
     const product = productsById.get(productId);
     const safeQuantity = Math.max(0, Math.min(Math.floor(quantity), product?.stock ?? 0));
     setCartItems((current) => {
@@ -345,6 +358,20 @@ function useStorefrontCart(
       }
       return current.map((item) => (item.productId === productId ? { ...item, quantity: safeQuantity } : item));
     });
+  }
+
+  async function applyCoupon(code: string) {
+    const normalized = code.trim().toUpperCase();
+    if (!normalized) { setCouponMessage("Escribe un código de cupón."); return; }
+    setApplyingCoupon(true); setCouponMessage(null);
+    try {
+      const result = await commerceApi.validateCoupon(normalized, cartTotal);
+      setCouponCode(result.code); setCouponDiscount(result.discountUsd);
+      setCouponMessage(`Cupón ${result.code} aplicado correctamente.`);
+    } catch (error) {
+      setCouponCode(""); setCouponDiscount(0);
+      setCouponMessage(error instanceof Error ? error.message : "Cupón no válido.");
+    } finally { setApplyingCoupon(false); }
   }
 
   async function checkoutCart() {
@@ -357,6 +384,7 @@ function useStorefrontCart(
         userId,
         userEmail,
         token,
+        couponCode: couponCode || null,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error inesperado en el checkout.";
@@ -372,6 +400,7 @@ function useStorefrontCart(
     cartLines,
     cartCount,
     cartTotal,
+    couponCode, couponDiscount, couponMessage, applyingCoupon,
     checkoutError,
     checkingOut,
     lastAddedProductId,
@@ -379,6 +408,7 @@ function useStorefrontCart(
     addToCart,
     viewCart,
     updateCartQuantity,
+    applyCoupon,
     checkoutCart,
   };
 }
@@ -387,25 +417,33 @@ export function CartDropdown({
   cartLines,
   cartCount,
   cartTotal,
+  couponCode,
+  couponDiscount,
+  couponMessage,
+  applyingCoupon,
   checkoutError,
   checkingOut,
   openCartSignal,
   updateCartQuantity,
+  applyCoupon,
   checkoutCart,
 }: Pick<
   StorefrontCart,
   | "cartLines"
   | "cartCount"
   | "cartTotal"
+  | "couponCode" | "couponDiscount" | "couponMessage" | "applyingCoupon"
   | "checkoutError"
   | "checkingOut"
   | "openCartSignal"
   | "updateCartQuantity"
+  | "applyCoupon"
   | "checkoutCart"
 >) {
   const [open, setOpen] = useState(false);
   const [lastOpenCartSignal, setLastOpenCartSignal] = useState(openCartSignal);
   const [removedLine, setRemovedLine] = useState<CartLine | null>(null);
+  const [couponInput, setCouponInput] = useState(couponCode);
   const drawerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const undoTimerRef = useRef<number | null>(null);
@@ -527,6 +565,14 @@ export function CartDropdown({
           >
             {checkingOut ? "Redirigiendo..." : "Comprar carrito"}
           </button>
+          {cartCount > 0 ? <div className="coupon-box">
+            <label htmlFor="cart-coupon">Cupón de descuento</label>
+            <div><input id="cart-coupon" value={couponInput} onChange={(event) => setCouponInput(event.target.value)} placeholder="Ej. VERDE10" />
+              <button className="button button-outline" type="button" disabled={applyingCoupon} onClick={() => void applyCoupon(couponInput)}>{applyingCoupon ? "Validando..." : "Aplicar"}</button></div>
+            {couponMessage ? <p className={couponDiscount ? "success-message" : "status-error"} role="status">{couponMessage}</p> : null}
+            {couponDiscount > 0 ? <div className="discount-line"><span>Descuento</span><strong>-{formatMoney(couponDiscount)}</strong></div> : null}
+            {couponDiscount > 0 ? <div className="discount-line total"><span>Total final</span><strong>{formatMoney(Math.max(0, cartTotal - couponDiscount))}</strong></div> : null}
+          </div> : null}
           {checkoutError ? <p className="status-error">{checkoutError}</p> : null}
           {removedLine ? (
             <div className="undo-toast" role="status">
@@ -575,6 +621,8 @@ function RootLayout({ children, cart }: { children: React.ReactNode; cart: Store
               openCartSignal={cart.openCartSignal}
               updateCartQuantity={cart.updateCartQuantity}
               checkoutCart={cart.checkoutCart}
+              couponCode={cart.couponCode} couponDiscount={cart.couponDiscount} couponMessage={cart.couponMessage}
+              applyingCoupon={cart.applyingCoupon} applyCoupon={cart.applyCoupon}
             />
             {clerkReady && user ? (
               <>
@@ -617,6 +665,9 @@ function HomePage({
   viewCart,
   authAction,
 }: StorefrontCart & { authAction?: React.ReactNode }) {
+  const [category, setCategory] = useState("Todas");
+  const categories = useMemo(() => ["Todas", ...Array.from(new Set(products.map((product) => product.category || "Otros")))], [products]);
+  const visibleProducts = category === "Todas" ? products : products.filter((product) => (product.category || "Otros") === category);
   return (
     <main>
       <Hero authAction={authAction} />
@@ -634,11 +685,14 @@ function HomePage({
               Todos incluyen envío en 24–48 h y garantía de germinación de 30 días.
             </p>
           </div>
+          <div className="catalog-filters" aria-label="Filtrar por categoría">
+            {categories.map((item) => <button type="button" key={item} className={item === category ? "active" : ""} aria-pressed={item === category} onClick={() => setCategory(item)}>{item}</button>)}
+          </div>
           {loadingProducts ? (
             <p className="loading-text">Cargando productos...</p>
           ) : (
             <div className="grid">
-              {products.map((product) => {
+              {visibleProducts.map((product) => {
                 const productInCart = cartLines.some((line) => line.product.id === product.id);
                 const justAdded = lastAddedProductId === product.id;
 
@@ -657,7 +711,9 @@ function HomePage({
                       )}
                     </Link>
                     <div className="product-pills">
+                      {product.category ? <span className="pill">{product.category}</span> : null}
                       {product.tag ? <span className="pill">{product.tag}</span> : null}
+                      {product.tags?.map((tag) => <span className="pill" key={tag}>{tag}</span>)}
                       <span className={`stock-pill ${product.stock <= 0 ? "stock-empty" : ""}`}>
                         {getStockLabel(product)}
                       </span>
@@ -684,6 +740,7 @@ function HomePage({
                         Ver detalles
                       </Link>
                     </div>
+                    <WishlistButton productId={product.id} compact />
                   </ProductCard>
                 );
               })}
@@ -744,6 +801,7 @@ function CustomerDashboardPage() {
   const [purchases, setPurchases] = useState<CustomerPurchase[]>([]);
   const [loadingPurchases, setLoadingPurchases] = useState(true);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [products, setProducts] = useState<Product[]>(fallbackProducts);
 
   useEffect(() => {
     const userId = user?.id;
@@ -768,6 +826,7 @@ function CustomerDashboardPage() {
 
     void loadPurchases();
   }, [getToken, user?.id]);
+  useEffect(() => { void fetchProductsFromApi().then(setProducts); }, []);
 
   const paidPurchases = purchases.filter((purchase) => purchase.status === "paid");
   const pendingPurchases = purchases.filter((purchase) => purchase.status === "pending");
@@ -874,6 +933,7 @@ function CustomerDashboardPage() {
           </div>
         ) : null}
       </section>
+      <WishlistPanel products={products} />
 
       <section className="panel stack">
         <h2 className="compact-title">Mis accesos</h2>
@@ -1084,6 +1144,8 @@ function AppWithoutClerk() {
               openCartSignal={cart.openCartSignal}
               updateCartQuantity={cart.updateCartQuantity}
               checkoutCart={cart.checkoutCart}
+              couponCode={cart.couponCode} couponDiscount={cart.couponDiscount} couponMessage={cart.couponMessage}
+              applyingCoupon={cart.applyingCoupon} applyCoupon={cart.applyCoupon}
             />
             <button className="button button-outline" type="button" disabled>
               Configura Clerk para login

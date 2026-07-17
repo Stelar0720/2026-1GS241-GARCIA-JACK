@@ -775,6 +775,19 @@ a {
   font-size: 0.94rem;
 }
 
+.catalog-filters { display:flex; gap:.5rem; flex-wrap:wrap; margin:0 0 1rem; }
+.catalog-filters button { border:1px solid var(--line); border-radius:999px; padding:.45rem .8rem; background:var(--glass); color:var(--text); cursor:pointer; }
+.catalog-filters button.active { background:var(--primary); color:white; border-color:var(--primary); }
+.wishlist-button { border:1px solid var(--line); border-radius:999px; padding:.45rem .75rem; background:var(--glass); color:var(--text); cursor:pointer; width:fit-content; }
+.wishlist-button.is-saved { color:var(--danger); border-color:color-mix(in srgb, var(--danger) 45%, transparent); }
+.wishlist-compact { justify-self:end; }
+.field-error { color:var(--danger); font-size:.78rem; }
+.coupon-box { display:grid; gap:.45rem; border-top:1px solid var(--line); padding-top:.8rem; }
+.coupon-box > div { display:flex; gap:.5rem; }
+.coupon-box input, .review-form select, .review-form textarea { width:100%; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); padding:.65rem; }
+.discount-line { display:flex; justify-content:space-between; color:var(--primary); }
+.discount-line.total { color:var(--text); font-size:1.08rem; }
+
 .grid {
   display: grid;
   gap: 1.1rem;
@@ -1436,6 +1449,21 @@ a {
   gap: 0.5rem;
   padding: 1rem;
 }
+
+.wishlist-grid { display:grid; gap:.75rem; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.wishlist-card { display:flex; gap:.7rem; align-items:center; border:1px solid var(--line); border-radius:var(--radius-sm); padding:.65rem; color:inherit; }
+.wishlist-card img { width:64px; height:64px; object-fit:cover; border-radius:.5rem; }
+.wishlist-card span { display:grid; gap:.2rem; }
+.wishlist-card small { color:var(--muted); }
+.reviews-section { display:grid; gap:1rem; margin-top:1rem; }
+.review-form { display:grid; gap:.75rem; max-width:700px; }
+.review-form label { display:grid; gap:.35rem; font-weight:700; }
+.review-form textarea { min-height:100px; resize:vertical; }
+.review-list { display:grid; gap:.65rem; }
+.review-card { display:grid; grid-template-columns:1fr auto; gap:.35rem .75rem; padding:.8rem; border:1px solid var(--line); border-radius:var(--radius-sm); }
+.review-card span { color:#d99500; }
+.review-card p, .review-card time { grid-column:1 / -1; }
+.review-card time { color:var(--muted); font-size:.8rem; }
 
 .auth-center {
   min-height: calc(100vh - 4.5rem);
