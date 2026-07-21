@@ -15,7 +15,9 @@ export type Permission =
   | "orders:read"
   | "orders:cancel"
   | "orders:sync"
+  | "orders:refund"
   | "metrics:read"
+  | "perf:read"
   | "reports:read"
   | "export:read"
   | "audit:read"
@@ -24,21 +26,25 @@ export type Permission =
   | "errors:resolve"
   | "auth:read"
   | "users:manage"
+  | "ci:trigger"
+  | "deploy:trigger"
   | "qa:run";
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   public: [],
   client: ["orders:cancel"],
   support: ["catalog:read", "orders:read", "auth:read"],
-  ci: ["qa:run"],
-  developer: ["logs:read", "errors:read", "errors:resolve"],
+  ci: ["qa:run", "ci:trigger", "deploy:trigger"],
+  developer: ["logs:read", "errors:read", "errors:resolve", "perf:read"],
   admin: [
     "catalog:read",
     "catalog:write",
     "orders:read",
     "orders:cancel",
     "orders:sync",
+    "orders:refund",
     "metrics:read",
+    "perf:read",
     "reports:read",
     "export:read",
     "audit:read",
@@ -47,6 +53,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "errors:resolve",
     "auth:read",
     "users:manage",
+    "ci:trigger",
+    "deploy:trigger",
   ],
 };
 

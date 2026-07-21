@@ -64,6 +64,14 @@ test.describe("Backoffice admin", () => {
     await expect(page.getByRole("heading", { name: uniqueName })).toHaveCount(0, { timeout: 15_000 });
   });
 
+  test("la tabla de órdenes expone la columna de reembolso (HU-030)", async ({ page }) => {
+    await page.goto(BACKOFFICE_URL);
+    await expect(page.getByText("Cargando datos del backoffice...")).toHaveCount(0, { timeout: 15_000 });
+
+    const ordersSection = page.locator("section.panel", { hasText: "Órdenes" }).first();
+    await expect(ordersSection.locator(".table-head")).toContainText("Reembolso");
+  });
+
   test("gestiona invitación, rol y suspensión de un usuario", async ({ page }) => {
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(BACKOFFICE_URL);

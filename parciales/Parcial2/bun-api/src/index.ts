@@ -16,12 +16,14 @@ import {
   getCoupon,
   getInventoryStock,
   getOrderById,
+  getOrderByCheckoutSession,
   listInventory,
   listCoupons,
   listReviews,
   listTaxonomy,
   listWishlist,
   listStockAlerts,
+  markOrderRefunded,
   searchAdminUsers,
   listOrders,
   listOrdersByBuyer,
@@ -71,6 +73,7 @@ import {
   inventoryUpdateSchema,
   orderStatusSchema,
   productInputSchema,
+  refundInputSchema,
   reviewInputSchema,
   safeId,
 } from "./validation";
@@ -79,6 +82,8 @@ import { captureError, getErrorFeed, initializeObservability, queryLogs, resolve
 import { createBackup, listBackups, migrateUp, migrationStatus, restoreBackup, rollbackLatestMigration, scheduleDailyBackups } from "./data-ops";
 import { authenticateApiKey, createApiKey, initializeApiKeys, listApiKeys, revokeApiKey, rotateApiKey } from "./api-keys";
 import { deleteUserData, exportUserData } from "./privacy";
+import { initializeNotifications, listEmails, sendOrderStatusEmail } from "./notifications";
+import { createSetupIntent, detachPaymentMethod, initializePayments, listPaymentMethods } from "./payments";
 
 const port = apiConfig.port;
 const uploadsDir = join(process.cwd(), "public", "uploads");
@@ -392,11 +397,47 @@ async function cancelCheckoutForOrder(order: NonNullable<Awaited<ReturnType<type
   return cancelPendingCheckoutOrders(stripeSessionId);
 }
 
+// Reembolso total o parcial de una orden pagada (HU-030). Stripe es la fuente de
+// verdad: si el refund falla, la orden no se toca.
+async function refundOrderWithStripe(
+  order: NonNullable<Awaited<ReturnType<typeof getOrderById>>>,
+  input: { amountUsd?: number; reason: string },
+) {
+  if (!stripeClient) throw new Error("Stripe no está configurado; no se puede reembolsar.");
+  if (order.status !== "paid") {
+    throw new Error(`Solo se reembolsan órdenes pagadas. Estado actual: '${order.status}'.`);
+  }
+  const amountUsd = Number((input.amountUsd ?? order.amountUsd).toFixed(2));
+  if (amountUsd > order.amountUsd) {
+    throw new Error(`El monto a reembolsar (${amountUsd}) supera el total de la orden (${order.amountUsd}).`);
+  }
+
+  const stripeSessionId = order.checkoutSessionId.split(":")[0];
+  const session = await stripeClient.checkout.sessions.retrieve(stripeSessionId);
+  const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+  if (!paymentIntentId) throw new Error("La sesión de Stripe no tiene un pago asociado que reembolsar.");
+
+  const refund = await stripeClient.refunds.create({
+    payment_intent: paymentIntentId,
+    amount: Math.round(amountUsd * 100),
+    metadata: { orderId: order.id, reason: input.reason },
+  });
+
+  return markOrderRefunded(order.id, {
+    refundId: refund.id,
+    amountUsd,
+    reason: input.reason,
+    createdAt: new Date().toISOString(),
+  });
+}
+
 await dbReady;
 await migrateUp(db);
 await initializeApiKeys(db);
 scheduleDailyBackups(db);
 await initializeObservability();
+await initializeNotifications();
+await initializePayments();
 
 const app = new Hono();
 
@@ -809,6 +850,13 @@ app.all("*", async (context) => {
         await updateOrderStatus(orderId, body.status);
       }
       await recordAuditLog({ actor: "backoffice", action: "order.status", resource: orderId, details: body.status });
+      // Notifica al cliente el nuevo estado (HU-055). No debe tumbar la respuesta.
+      await sendOrderStatusEmail({
+        to: order.buyerEmail,
+        status: body.status,
+        orderId,
+        amountUsd: order.amountUsd,
+      }).catch(() => undefined);
       return jsonResponse({ ok: true }, { origin });
     }
 
@@ -877,6 +925,23 @@ app.all("*", async (context) => {
 
       if (!processed) {
         return jsonResponse({ ok: true, deduplicated: true }, { origin });
+      }
+
+      // Confirmación de pago por email (HU-055). Va fuera de la transacción y
+      // después del guard de deduplicación, para no mandar el correo dos veces.
+      if (event.type === "checkout.session.completed") {
+        const checkoutSession = event.data.object as Stripe.Checkout.Session;
+        const buyerEmail = checkoutSession.customer_details?.email ?? checkoutSession.customer_email ?? null;
+        for (const line of readCheckoutLinesFromSession(checkoutSession, checkoutSession.metadata?.productId ?? "unknown-product")) {
+          const reference = getCheckoutOrderId(checkoutSession.id, line.productId);
+          const order = await getOrderByCheckoutSession(reference).catch(() => null);
+          await sendOrderStatusEmail({
+            to: buyerEmail,
+            status: "paid",
+            orderId: order?.id ?? reference,
+            amountUsd: line.amountUsd,
+          }).catch(() => undefined);
+        }
       }
 
       return jsonResponse({ ok: true }, { origin });
@@ -1189,6 +1254,21 @@ app.all("*", async (context) => {
       return jsonResponse({ data: logs }, { origin });
     }
 
+    // Bandeja de salida de notificaciones por email (HU-055). Deja evidencia
+    // consultable de cada aviso enviado sin exponer el HTML completo.
+    if (req.method === "GET" && url.pathname === "/notifications") {
+      const auth = authorize(req, "orders:read", origin);
+      if ("error" in auth) return auth.error;
+
+      return jsonResponse({
+        data: await listEmails({
+          orderId: url.searchParams.get("orderId")?.trim() || undefined,
+          to: url.searchParams.get("to")?.trim() || undefined,
+          limit: Number(url.searchParams.get("limit")) || undefined,
+        }),
+      }, { origin });
+    }
+
     // Cancela una orden pendiente (HU-066), con guard de estado.
     if (req.method === "POST" && url.pathname.startsWith("/orders/") && url.pathname.endsWith("/cancel")) {
       const auth = authorize(req, "orders:cancel", origin);
@@ -1231,6 +1311,74 @@ app.all("*", async (context) => {
         { ok: true, pendingBefore: before, pendingAfter: after, reconciled: Math.max(0, before - after) },
         { origin },
       );
+    }
+
+    // Reembolso total o parcial de una orden pagada (HU-030).
+    const refundMatch = url.pathname.match(/^\/orders\/([^/]+)\/refund$/);
+    if (req.method === "POST" && refundMatch) {
+      const auth = authorize(req, "orders:refund", origin);
+      if ("error" in auth) return auth.error;
+
+      const parsed = refundInputSchema.safeParse(await req.json().catch(() => ({})));
+      if (!parsed.success) {
+        return errorResponse("INVALID_INPUT", "Datos de reembolso inválidos.", { status: 400, origin, details: { issues: formatValidationIssues(parsed.error) } });
+      }
+
+      const orderId = decodeURIComponent(refundMatch[1]);
+      const order = await getOrderById(orderId);
+      if (!order) return errorResponse("NOT_FOUND", "Orden no encontrada.", { status: 404, origin });
+
+      let refunded: Awaited<ReturnType<typeof markOrderRefunded>>;
+      try {
+        refunded = await refundOrderWithStripe(order, parsed.data);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "No se pudo procesar el reembolso.";
+        const unavailable = message.startsWith("Stripe no está configurado");
+        return errorResponse(unavailable ? "SERVICE_UNAVAILABLE" : "CONFLICT", message, { status: unavailable ? 503 : 409, origin });
+      }
+
+      await recordAuditLog({
+        actor: auth.role,
+        action: "order.refund",
+        resource: orderId,
+        details: JSON.stringify({ amountUsd: parsed.data.amountUsd ?? order.amountUsd, reason: parsed.data.reason }),
+      });
+      await sendOrderStatusEmail({
+        to: order.buyerEmail,
+        status: "refunded",
+        orderId,
+        amountUsd: parsed.data.amountUsd ?? order.amountUsd,
+      }).catch(() => undefined);
+
+      return jsonResponse({ ok: true, order: refunded }, { origin });
+    }
+
+    // Métodos de pago guardados del cliente autenticado (HU-032).
+    // La identidad sale del JWT de Clerk: nunca se acepta un customerId del cliente.
+    const paymentMethodMatch = url.pathname.match(/^\/me\/payment-methods(?:\/([^/]+))?$/);
+    if (paymentMethodMatch) {
+      const identity = await authenticateCommerceCustomer(req);
+      if (!identity) {
+        return errorResponse("UNAUTHORIZED", "Necesitas iniciar sesión para gestionar tus métodos de pago.", { status: 401, origin });
+      }
+      if (!stripeClient) {
+        return errorResponse("SERVICE_UNAVAILABLE", "Stripe no está configurado en este entorno.", { status: 503, origin });
+      }
+
+      const email = req.headers.get("x-customer-email")?.trim().toLowerCase() || null;
+      if (req.method === "GET" && !paymentMethodMatch[1]) {
+        return jsonResponse({ data: await listPaymentMethods(stripeClient, identity.userId, email) }, { origin });
+      }
+      if (req.method === "POST" && !paymentMethodMatch[1]) {
+        return jsonResponse({ data: await createSetupIntent(stripeClient, identity.userId, email) }, { status: 201, origin });
+      }
+      if (req.method === "DELETE" && paymentMethodMatch[1]) {
+        const result = await detachPaymentMethod(stripeClient, identity.userId, decodeURIComponent(paymentMethodMatch[1]));
+        if (!result.detached) {
+          return errorResponse("NOT_FOUND", "Ese método de pago no pertenece a tu cuenta.", { status: 404, origin });
+        }
+        return jsonResponse({ ok: true }, { origin });
+      }
     }
 
     return errorResponse("NOT_FOUND", "Ruta no encontrada.", { status: 404, origin, details: { path: url.pathname } });

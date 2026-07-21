@@ -27,10 +27,10 @@ test("auth/whoami: sin key resuelve rol público", async ({ request }) => {
   expect(body.permissions).toEqual([]);
 });
 
-test("auth/whoami: la key CI solo obtiene permiso de QA", async ({ request }) => {
+test("auth/whoami: la key CI solo obtiene permisos de QA y pipelines", async ({ request }) => {
   const response = await request.get(`${API_URL}/auth/whoami`, { headers: { Authorization: "Bearer e2e-ci-key" } });
   expect(response.ok()).toBeTruthy();
-  expect(await response.json()).toEqual({ role: "ci", permissions: ["qa:run"] });
+  expect(await response.json()).toEqual({ role: "ci", permissions: ["qa:run", "ci:trigger", "deploy:trigger"] });
 });
 
 test("auth/roles: sin key rechaza con 401", async ({ request }) => {
@@ -172,6 +172,63 @@ test("data operations: migrations and confirmed backups are admin-only", async (
   const id = ((await backup.json()) as { data: { id: string } }).data.id;
   expect((await request.post(`${API_URL}/admin/backups/${id}/restore`, { headers, data: { confirmation: "WRONG" } })).status()).toBe(400);
   expect((await request.get(`${API_URL}/admin/backups`)).status()).toBe(401);
+});
+
+test("reembolsos: exigen permiso orders:refund y validan el estado de la orden (HU-030)", async ({ request }) => {
+  expect((await request.post(`${API_URL}/orders/cualquiera/refund`, { data: { reason: "test" } })).status()).toBe(401);
+
+  const forbidden = await request.post(`${API_URL}/orders/cualquiera/refund`, {
+    headers: { Authorization: "Bearer e2e-support-key" },
+    data: { reason: "test" },
+  });
+  expect(forbidden.status()).toBe(403);
+  expect(((await forbidden.json()) as { error: { code: string } }).error.code).toBe("FORBIDDEN");
+
+  const missing = await request.post(`${API_URL}/orders/orden-inexistente/refund`, {
+    headers: { Authorization: "Bearer e2e-admin-key" },
+    data: { reason: "Solicitado por el cliente" },
+  });
+  expect(missing.status()).toBe(404);
+
+  const invalid = await request.post(`${API_URL}/orders/orden-inexistente/refund`, {
+    headers: { Authorization: "Bearer e2e-admin-key" },
+    data: { amountUsd: -5 },
+  });
+  expect(invalid.status()).toBe(400);
+  expect(((await invalid.json()) as { error: { code: string } }).error.code).toBe("INVALID_INPUT");
+});
+
+test("métodos de pago: requieren sesión de cliente y degradan sin Stripe (HU-032)", async ({ request }) => {
+  expect((await request.get(`${API_URL}/me/payment-methods`)).status()).toBe(401);
+
+  const headers = { Authorization: "Bearer e2e-client-key", "X-Customer-Id": "e2e-customer-cards" };
+  // En el entorno de pruebas no hay STRIPE_SECRET_KEY: el contrato es degradar a
+  // 503 explícito, nunca filtrar un 500 ni devolver una lista vacía silenciosa.
+  const listed = await request.get(`${API_URL}/me/payment-methods`, { headers });
+  expect(listed.status()).toBe(503);
+  expect(((await listed.json()) as { error: { code: string } }).error.code).toBe("SERVICE_UNAVAILABLE");
+  expect((await request.post(`${API_URL}/me/payment-methods`, { headers })).status()).toBe(503);
+});
+
+test("notificaciones: la bandeja de salida exige permiso y responde una lista (HU-055)", async ({ request }) => {
+  expect((await request.get(`${API_URL}/notifications`)).status()).toBe(401);
+
+  const listed = await request.get(`${API_URL}/notifications?limit=5`, {
+    headers: { Authorization: "Bearer e2e-admin-key" },
+  });
+  expect(listed.status()).toBe(200);
+  expect(Array.isArray(((await listed.json()) as { data: unknown[] }).data)).toBe(true);
+});
+
+test("matriz de roles: admin concentra reembolsos y CI dispara pipelines", async ({ request }) => {
+  const response = await request.get(`${API_URL}/auth/roles`, { headers: { Authorization: "Bearer e2e-admin-key" } });
+  expect(response.status()).toBe(200);
+  const roles = ((await response.json()) as { data: Record<string, string[]> }).data;
+  expect(roles.admin).toContain("orders:refund");
+  expect(roles.admin).toContain("perf:read");
+  expect(roles.ci).toContain("ci:trigger");
+  expect(roles.ci).toContain("deploy:trigger");
+  expect(roles.support).not.toContain("orders:refund");
 });
 
 test("GDPR: exports personal data and deletes it with explicit confirmation", async ({ request }) => {

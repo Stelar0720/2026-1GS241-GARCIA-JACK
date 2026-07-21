@@ -256,7 +256,22 @@ body {
 /* Table row for orders (different columns) */
 .orders-table .table-row,
 .table-row:has(.order-id) {
-  grid-template-columns: 1.1fr 1.4fr 1.4fr 0.7fr 0.8fr 1fr;
+  grid-template-columns: 1.1fr 1.4fr 1.4fr 0.7fr 0.8fr 1fr 1.6fr;
+}
+
+/* Reembolsos (HU-030) */
+.refund-cell { display: grid; grid-template-columns: 5rem 1fr auto; gap: 0.4rem; align-items: center; }
+.refund-cell input { min-width: 0; }
+.refund-cell button {
+  border: 1px solid #b91c1c; background: #fef2f2; color: #b91c1c;
+  border-radius: 8px; padding: 0.45rem 0.7rem; font-size: 0.85rem; cursor: pointer; white-space: nowrap;
+}
+.refund-cell button:disabled { opacity: 0.55; cursor: not-allowed; }
+.refund-badge { color: #b91c1c; font-weight: 700; font-size: 0.85rem; }
+.refund-badge small { display: block; font-weight: 400; color: #64748b; }
+
+@media (max-width: 760px) {
+  .refund-cell { grid-template-columns: 1fr; }
 }
 
 /* ============================================

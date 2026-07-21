@@ -9,16 +9,19 @@ import { getApiErrorMessage, type ApiErrorBody } from "./api-error";
 // TYPES
 // ============================================
 
+type OrderRefund = { refundId: string; amountUsd: number; reason: string; createdAt: string };
+
 type Order = {
   id: string;
   checkoutSessionId: string;
   productId: string;
   buyerId: string;
-  status: "pending" | "paid" | "cancelled";
+  status: "pending" | "paid" | "cancelled" | "refunded";
   quantity: number;
   amountUsd: number;
   createdAt: string;
   updatedAt: string;
+  refund?: OrderRefund | null;
 };
 
 type Product = {
@@ -66,11 +69,14 @@ function validateProduct(data: ProductFormData): Partial<Record<ProductField, st
 // CONSTANTS
 // ============================================
 
+// 'refunded' no está en el dropdown a propósito: un reembolso se procesa contra
+// Stripe con el botón dedicado (HU-030), no cambiando el estado a mano.
 const ORDER_STATUSES: Order["status"][] = ["pending", "paid", "cancelled"];
 const ORDER_STATUS_LABELS: Record<Order["status"], string> = {
   pending: "Pendiente (sin pago)",
   paid: "Pagada",
   cancelled: "Cancelada",
+  refunded: "Reembolsada",
 };
 
 // ============================================
@@ -90,6 +96,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingOrder, setSavingOrder] = useState<string | null>(null);
+  const [refundDrafts, setRefundDrafts] = useState<Record<string, { amountUsd?: string; reason?: string }>>({});
   const [savingProduct, setSavingProduct] = useState<string | null>(null);
   const [uploadingProductImage, setUploadingProductImage] = useState(false);
 
@@ -198,6 +205,38 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       const message =
         updateError instanceof Error ? updateError.message : "Error al actualizar la orden.";
       setError(message);
+    } finally {
+      setSavingOrder(null);
+    }
+  }
+
+  // Reembolso total o parcial contra Stripe (HU-030).
+  async function refundOrder(order: Order) {
+    const raw = refundDrafts[order.id] ?? {};
+    const amount = raw.amountUsd?.trim() ? Number(raw.amountUsd) : undefined;
+    if (amount !== undefined && (!Number.isFinite(amount) || amount <= 0 || amount > order.amountUsd)) {
+      setError(`El monto a reembolsar debe estar entre 0 y ${order.amountUsd.toFixed(2)}.`);
+      return;
+    }
+
+    setSavingOrder(order.id);
+    setError(null);
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/orders/${order.id}/refund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(amount !== undefined ? { amountUsd: amount } : {}),
+          reason: raw.reason?.trim() || "Solicitado por el cliente",
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(await response.json().catch(() => null), "No se pudo procesar el reembolso."));
+      }
+      setRefundDrafts((current) => ({ ...current, [order.id]: {} }));
+      await loadData();
+    } catch (refundError) {
+      setError(refundError instanceof Error ? refundError.message : "Error al reembolsar la orden.");
     } finally {
       setSavingOrder(null);
     }
@@ -535,6 +574,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                 <span>Cantidad</span>
                 <span>Monto</span>
                 <span>Estado</span>
+                <span>Reembolso</span>
               </div>
               {orders.length === 0 ? (
                 <p className="empty">No hay órdenes registradas.</p>
@@ -547,19 +587,67 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
                     <span>{order.quantity}</span>
                     <span className="amount">${order.amountUsd.toFixed(2)}</span>
                     <span>
-                      <select
-                        disabled={savingOrder === order.id}
-                        value={order.status}
-                        onChange={(event) =>
-                          void updateOrderStatus(order.id, event.target.value as Order["status"])
-                        }
-                      >
-                        {ORDER_STATUSES.map((status) => (
-                          <option key={status} value={status}>
-                            {ORDER_STATUS_LABELS[status]}
-                          </option>
-                        ))}
-                      </select>
+                      {order.status === "refunded" ? (
+                        <strong className="refund-badge">{ORDER_STATUS_LABELS.refunded}</strong>
+                      ) : (
+                        <select
+                          aria-label={`Estado de la orden ${order.id}`}
+                          disabled={savingOrder === order.id}
+                          value={order.status}
+                          onChange={(event) =>
+                            void updateOrderStatus(order.id, event.target.value as Order["status"])
+                          }
+                        >
+                          {ORDER_STATUSES.map((status) => (
+                            <option key={status} value={status}>
+                              {ORDER_STATUS_LABELS[status]}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </span>
+                    <span>
+                      {order.refund ? (
+                        <span className="refund-badge">
+                          ${order.refund.amountUsd.toFixed(2)}
+                          <small>{order.refund.reason}</small>
+                        </span>
+                      ) : order.status === "paid" ? (
+                        <span className="refund-cell">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            max={order.amountUsd}
+                            placeholder="Total"
+                            aria-label={`Monto a reembolsar de la orden ${order.id}`}
+                            value={refundDrafts[order.id]?.amountUsd ?? ""}
+                            onChange={(event) =>
+                              setRefundDrafts((current) => ({
+                                ...current,
+                                [order.id]: { ...current[order.id], amountUsd: event.target.value },
+                              }))
+                            }
+                          />
+                          <input
+                            type="text"
+                            placeholder="Motivo"
+                            aria-label={`Motivo del reembolso de la orden ${order.id}`}
+                            value={refundDrafts[order.id]?.reason ?? ""}
+                            onChange={(event) =>
+                              setRefundDrafts((current) => ({
+                                ...current,
+                                [order.id]: { ...current[order.id], reason: event.target.value },
+                              }))
+                            }
+                          />
+                          <button type="button" disabled={savingOrder === order.id} onClick={() => void refundOrder(order)}>
+                            Reembolsar
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </span>
                   </div>
                 ))

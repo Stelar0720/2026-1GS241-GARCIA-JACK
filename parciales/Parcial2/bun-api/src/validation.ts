@@ -76,7 +76,13 @@ export const inventoryUpdateSchema = z.object({
 }).strict();
 
 export const orderStatusSchema = z.object({
-  status: z.enum(["pending", "paid", "cancelled"]),
+  status: z.enum(["pending", "paid", "cancelled", "refunded"]),
+}).strict();
+
+// Reembolso total o parcial (HU-030). Sin `amountUsd` se reembolsa el total.
+export const refundInputSchema = z.object({
+  amountUsd: z.number().finite().positive().max(1_000_000).optional(),
+  reason: safeText(200, 1).default("Solicitado por el cliente"),
 }).strict();
 
 export function formatValidationIssues(error: z.ZodError) {

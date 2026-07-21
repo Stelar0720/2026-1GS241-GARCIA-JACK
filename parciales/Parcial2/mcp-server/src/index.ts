@@ -24,7 +24,9 @@ type Permission =
   | "orders:read"
   | "orders:cancel"
   | "orders:sync"
+  | "orders:refund"
   | "metrics:read"
+  | "perf:read"
   | "reports:read"
   | "export:read"
   | "audit:read"
@@ -33,6 +35,8 @@ type Permission =
   | "errors:resolve"
   | "auth:read"
   | "users:manage"
+  | "ci:trigger"
+  | "deploy:trigger"
   | "qa:run";
 
 let sessionRole = "public";
@@ -111,7 +115,7 @@ async function apiSend(method: string, path: string, payload?: unknown) {
 
 async function userApiRequest(method: "GET" | "POST" | "DELETE", path: string) {
   if (!USER_TOKEN) {
-    throw new Error("La wishlist requiere una sesión de cliente. Configura MCP_USER_TOKEN con un JWT vigente de Clerk.");
+    throw new Error("Esta operación es personal del cliente. Configura MCP_USER_TOKEN con un JWT vigente de Clerk.");
   }
   const response = await fetch(`${API_URL}${path}`, {
     method,
@@ -140,7 +144,7 @@ type ProductRecord = {
 
 type OrderRecord = {
   id: string;
-  status: "pending" | "paid" | "cancelled";
+  status: "pending" | "paid" | "cancelled" | "refunded";
   amountUsd: number;
 };
 
@@ -570,6 +574,51 @@ server.registerTool(
     if (!productId) return errorResult(`${action} requiere productId.`);
     const path = `/wishlist/${encodeURIComponent(productId)}`;
     return textResult(await userApiRequest(action === "add" ? "POST" : "DELETE", path));
+  },
+);
+
+// --- process_refund (HU-030, orders:refund) ---
+server.registerTool(
+  "process_refund",
+  {
+    title: "Procesar reembolso",
+    description:
+      "Reembolsa total o parcialmente una orden pagada vía Stripe y la marca en auditoría (HU-030). Requiere orders:refund.",
+    inputSchema: {
+      orderId: z.string().trim().min(1),
+      amountUsd: z.number().positive().optional().describe("Monto parcial; si se omite se reembolsa el total"),
+      reason: z.string().trim().min(1).max(200).default("Solicitado por el cliente"),
+    },
+  },
+  async ({ orderId, amountUsd, reason }) => {
+    const denied = denyIfMissing("orders:refund");
+    if (denied) return denied;
+    return textResult(
+      await apiSend("POST", `/orders/${encodeURIComponent(orderId)}/refund`, {
+        ...(amountUsd !== undefined ? { amountUsd } : {}),
+        reason,
+      }),
+    );
+  },
+);
+
+// --- manage_payment_methods (HU-032, cliente autenticado con Clerk) ---
+server.registerTool(
+  "manage_payment_methods",
+  {
+    title: "Gestionar métodos de pago",
+    description:
+      "Lista las tarjetas guardadas, crea un SetupIntent para agregar una nueva o elimina una existente (HU-032). Requiere MCP_USER_TOKEN con un JWT vigente de Clerk.",
+    inputSchema: {
+      action: z.enum(["list", "add", "remove"]),
+      paymentMethodId: z.string().trim().min(1).optional(),
+    },
+  },
+  async ({ action, paymentMethodId }) => {
+    if (action === "list") return textResult(await userApiRequest("GET", "/me/payment-methods"));
+    if (action === "add") return textResult(await userApiRequest("POST", "/me/payment-methods"));
+    if (!paymentMethodId) return errorResult("remove requiere paymentMethodId.");
+    return textResult(await userApiRequest("DELETE", `/me/payment-methods/${encodeURIComponent(paymentMethodId)}`));
   },
 );
 

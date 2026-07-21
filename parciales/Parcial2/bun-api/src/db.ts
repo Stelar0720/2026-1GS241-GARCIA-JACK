@@ -8,7 +8,7 @@ const mongoDatabase = apiConfig.mongoDatabase;
 const client = new MongoClient(mongoUri);
 export let db: Db;
 
-export type OrderStatus = "pending" | "paid" | "cancelled";
+export type OrderStatus = "pending" | "paid" | "cancelled" | "refunded";
 export type PendingOrder = { checkoutSessionId: string; productId: string; buyerId: string; amountUsd: number; quantity: number };
 export type ProductInput = { name: string; description: string; priceUsd: number; tag: string; category?: string; tags?: string[]; imageUrl: string };
 export type ProductRecord = ProductInput & { id: string; active: number; stock: number; minimumStock: number; inventoryUpdatedAt: string | null; createdAt: string; updatedAt: string };
@@ -23,7 +23,8 @@ export type SalesReport = {
   byProduct: { productId: string; productName: string | null; unitsSold: number; revenueUsd: number }[];
 };
 
-type OrderDocument = { id: string; checkoutSessionId: string; productId: string; buyerId: string; buyerEmail: string | null; status: OrderStatus; quantity: number; amountUsd: number; createdAt: string; updatedAt: string };
+type OrderDocument = { id: string; checkoutSessionId: string; productId: string; buyerId: string; buyerEmail: string | null; status: OrderStatus; quantity: number; amountUsd: number; createdAt: string; updatedAt: string; refund?: OrderRefund | null };
+export type OrderRefund = { refundId: string; amountUsd: number; reason: string; createdAt: string };
 type InventoryDocument = { sku: string; stock: number; minimumStock: number; updatedAt: string };
 export type StockAlert = InventoryDocument & { type: "low_stock"; deficit: number };
 type ProductDocument = ProductInput & { id: string; active: number; createdAt: string; updatedAt: string };
@@ -119,6 +120,26 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus) {
     await orders.updateOne({ id: orderId }, { $set: { status, updatedAt: new Date().toISOString() } }, { session });
   }));
 }
+// Registra un reembolso (HU-030). Un reembolso total pasa la orden a 'refunded' y
+// libera el stock reservado; uno parcial la deja en 'paid' con el monto anotado.
+// ponytail: un solo reembolso por orden; si hiciera falta acumular varios, cambiar
+// `refund` por un arreglo y sumar los montos antes de decidir el estado.
+export async function markOrderRefunded(orderId: string, refund: OrderRefund) {
+  await ready();
+  return client.withSession(async (session) => session.withTransaction(async () => {
+    const previous = await orders.findOne({ id: orderId }, { session });
+    if (!previous) return null;
+    const total = refund.amountUsd >= previous.amountUsd;
+    if (total) await reconcileReservedInventory(previous, { ...previous, status: "refunded" }, session);
+    await orders.updateOne(
+      { id: orderId },
+      { $set: { ...(total ? { status: "refunded" as OrderStatus } : {}), refund, updatedAt: new Date().toISOString() } },
+      { session },
+    );
+    return orders.findOne({ id: orderId }, { projection: { _id: 0 }, session });
+  }));
+}
+
 export async function cancelPendingCheckoutOrders(stripeSessionId: string) {
   await ready();
   const escaped = stripeSessionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -223,6 +244,7 @@ export async function generateSalesReport(filters: { from?: string; to?: string 
   return { from: filters.from ?? null, to: filters.to ?? null, totalOrders: all.length, paidOrders: paid.length, revenueTotalUsd: Number(revenue.toFixed(2)), averageOrderValueUsd: paid.length ? Number((revenue / paid.length).toFixed(2)) : 0, topProduct: byProduct[0] ? { productId: byProduct[0].productId, productName: byProduct[0].productName, unitsSold: byProduct[0].unitsSold } : null, byProduct };
 }
 export async function getOrderById(orderId: string) { await ready(); return orders.findOne({ id: orderId }, { projection: { _id: 0 } }); }
+export async function getOrderByCheckoutSession(checkoutSessionId: string) { await ready(); return orders.findOne({ checkoutSessionId }, { projection: { _id: 0 } }); }
 
 export async function hasProcessedStripeEvent(eventId: string) { await ready(); return Boolean(await processedStripeEvents.findOne({ eventId })); }
 export async function markStripeEventProcessed(eventId: string, type: string) { await ready(); const result = await processedStripeEvents.updateOne({ eventId }, { $setOnInsert: { eventId, type, processedAt: new Date().toISOString() } }, { upsert: true }); return result.upsertedCount === 1; }
