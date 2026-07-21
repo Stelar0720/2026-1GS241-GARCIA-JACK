@@ -82,7 +82,9 @@ import { captureError, getErrorFeed, initializeObservability, queryLogs, resolve
 import { createBackup, listBackups, migrateUp, migrationStatus, restoreBackup, rollbackLatestMigration, scheduleDailyBackups } from "./data-ops";
 import { authenticateApiKey, createApiKey, initializeApiKeys, listApiKeys, revokeApiKey, rotateApiKey } from "./api-keys";
 import { deleteUserData, exportUserData } from "./privacy";
+import { invoiceFileName, renderInvoicePdf } from "./invoices";
 import { initializeNotifications, listEmails, sendOrderStatusEmail } from "./notifications";
+import { getPerformanceSnapshot, recordRequest } from "./performance";
 import { createSetupIntent, detachPaymentMethod, initializePayments, listPaymentMethods } from "./payments";
 
 const port = apiConfig.port;
@@ -452,8 +454,11 @@ app.onError(async (error, context) => {
 app.use("*", async (context, next) => {
   const startedAt = performance.now();
   await next();
+  const durationMs = performance.now() - startedAt;
+  // Latencia y tasa de error por endpoint (HU-035).
+  recordRequest({ method: context.req.method, path: context.req.path, status: context.res.status, durationMs });
   if (!context.req.path.startsWith("/observability/")) {
-    await writeLog({ level: context.res.status >= 500 ? "error" : context.res.status >= 400 ? "warn" : "info", service: "api", message: "http.request", context: { method: context.req.method, path: context.req.path, status: context.res.status, durationMs: Math.round(performance.now() - startedAt) } }).catch(() => undefined);
+    await writeLog({ level: context.res.status >= 500 ? "error" : context.res.status >= 400 ? "warn" : "info", service: "api", message: "http.request", context: { method: context.req.method, path: context.req.path, status: context.res.status, durationMs: Math.round(durationMs) } }).catch(() => undefined);
   }
 });
 
@@ -1252,6 +1257,56 @@ app.all("*", async (context) => {
         limit: Number(url.searchParams.get("limit")) || undefined,
       });
       return jsonResponse({ data: logs }, { origin });
+    }
+
+    // Métricas de rendimiento agregadas: P50/P95/P99, tasa 4xx/5xx y uptime (HU-035).
+    if (req.method === "GET" && url.pathname === "/observability/performance") {
+      const auth = authorize(req, "perf:read", origin);
+      if ("error" in auth) return auth.error;
+      return jsonResponse({ data: getPerformanceSnapshot({ route: url.searchParams.get("route")?.trim() || undefined }) }, { origin });
+    }
+
+    // Factura en PDF de una orden (HU-033). La descarga el dueño de la orden con
+    // su JWT de Clerk, o un rol con orders:read desde el backoffice.
+    const invoiceMatch = url.pathname.match(/^\/orders\/([^/]+)\/invoice$/);
+    if (req.method === "GET" && invoiceMatch) {
+      // Se autentica antes de tocar la base: así un anónimo no puede sondear
+      // qué IDs de orden existen a partir de la diferencia entre 404 y 401.
+      const identity = await authenticateCommerceCustomer(req);
+      const isStaff = roleHasPermission(resolveRole(extractBearerKey(req.headers.get("authorization"))), "orders:read");
+      if (!identity && !isStaff) {
+        return errorResponse("UNAUTHORIZED", "Necesitas iniciar sesión para descargar tu factura.", { status: 401, origin });
+      }
+
+      const orderId = decodeURIComponent(invoiceMatch[1]);
+      const order = await getOrderById(orderId);
+      if (!order) return errorResponse("NOT_FOUND", "Orden no encontrada.", { status: 404, origin });
+      if (!isStaff && identity?.userId !== order.buyerId) {
+        return errorResponse("FORBIDDEN", "No puedes descargar la factura de otra cuenta.", { status: 403, origin });
+      }
+      if (order.status !== "paid" && order.status !== "refunded") {
+        return errorResponse("CONFLICT", `Solo las órdenes pagadas tienen factura. Estado actual: '${order.status}'.`, { status: 409, origin, details: { currentStatus: order.status } });
+      }
+
+      const product = await getActiveProduct(order.productId).catch(() => null);
+      const pdf = renderInvoicePdf({
+        orderId: order.id,
+        createdAt: order.createdAt,
+        status: order.status,
+        buyerEmail: order.buyerEmail,
+        buyerId: order.buyerId,
+        productName: product?.name ?? null,
+        quantity: order.quantity,
+        amountUsd: order.amountUsd,
+        refund: order.refund ?? null,
+      });
+      return new Response(pdf, {
+        headers: {
+          ...getCorsHeaders(origin),
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${invoiceFileName(order.id)}"`,
+        },
+      });
     }
 
     // Bandeja de salida de notificaciones por email (HU-055). Deja evidencia

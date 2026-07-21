@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { AdminUsers } from "./AdminUsers";
 import { DataSecurityPanel } from "./DataSecurityPanel";
+import { PerformancePanel } from "./PerformancePanel";
 import { getApiErrorMessage, type ApiErrorBody } from "./api-error";
 
 // ============================================
@@ -656,6 +657,7 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
           </section>
 
           <AdminUsers apiBaseUrl={apiBaseUrl} />
+          <PerformancePanel apiBaseUrl={apiBaseUrl} />
           <DataSecurityPanel apiBaseUrl={apiBaseUrl} />
 
         </>

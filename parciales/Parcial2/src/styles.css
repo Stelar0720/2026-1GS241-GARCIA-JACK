@@ -1438,6 +1438,13 @@ a {
   color: var(--danger);
 }
 
+.button-compact {
+  justify-self: start;
+  margin-top: 0.6rem;
+  padding-block: 0.45rem;
+  font-size: 0.85rem;
+}
+
 .status-refunded {
   background: color-mix(in srgb, var(--muted) 18%, transparent);
   color: var(--muted);
