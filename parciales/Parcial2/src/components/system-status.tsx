@@ -1,20 +1,23 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useLocale } from "@/lib/i18n";
 
 export function NotFoundPage() {
+  const { t } = useLocale();
   return (
     <main className="system-page container">
       <section className="system-card panel">
         <span className="system-code" aria-hidden="true">404</span>
-        <h1>Página no encontrada</h1>
-        <p>Puede que el enlace haya cambiado o que la dirección esté incompleta.</p>
-        <Link className="button button-primary" to="/">Volver al inicio</Link>
+        <h1>{t("errors.notFoundTitle")}</h1>
+        <p>{t("errors.notFoundBody")}</p>
+        <Link className="button button-primary" to="/">{t("errors.backHome")}</Link>
       </section>
     </main>
   );
 }
 
 export function NetworkStatus() {
+  const { t } = useLocale();
   const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
   useEffect(() => {
     const checkConnection = () => setOnline(navigator.onLine);
@@ -31,8 +34,8 @@ export function NetworkStatus() {
   return (
     <aside className="offline-banner" role="status" aria-live="polite">
       <span aria-hidden="true">●</span>
-      <div><strong>Sin conexión</strong><small>Reintentaremos automáticamente cuando vuelva la red.</small></div>
-      <button type="button" onClick={() => setOnline(navigator.onLine)}>Reintentar</button>
+      <div><strong>{t("errors.offlineTitle")}</strong><small>{t("errors.offlineBody")}</small></div>
+      <button type="button" onClick={() => setOnline(navigator.onLine)}>{t("errors.retry")}</button>
     </aside>
   );
 }
