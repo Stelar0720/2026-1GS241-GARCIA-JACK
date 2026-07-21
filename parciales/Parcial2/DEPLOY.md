@@ -18,6 +18,17 @@ Validado el **14 de julio de 2026**.
 
 `main` despliega automáticamente a staging únicamente después de que `UrbanSprout CI` termina correctamente. Railway espera los check suites requeridos antes de construir.
 
+## Cómo saber qué versión está corriendo
+
+```bash
+curl https://urbansprout-api-production.up.railway.app/version
+# {"commit":"70ee1d4...","short":"70ee1d4","environment":"production","startedAt":"..."}
+```
+
+Compara ese `commit` contra el de la rama. Si no coinciden, **el despliegue no llegó**, por más que `/health` responda 200.
+
+El paso de verificación del CD (`.github/scripts/verify-deploy.sh`) hace exactamente esa comparación y falla si no coincide. Antes solo hacía `curl /health`, que la instancia anterior también contesta: el pipeline daba verde sin haber desplegado nada.
+
 Producción sigue la rama `production`. Para promover una versión, se ejecuta manualmente `UrbanSprout CD` desde GitHub Actions, se escribe `DEPLOY` y el propietario debe aprobar el environment protegido `production`. El workflow promueve el mismo commit probado, ejecuta smoke tests y crea un GitHub Release con tag y changelog automáticos.
 
 ## Arquitectura desplegada
