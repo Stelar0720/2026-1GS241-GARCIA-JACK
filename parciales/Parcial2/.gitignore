@@ -21,6 +21,9 @@
 /dist
 /build
 
+# Sello de version: lo escribe el pipeline de CD antes de subir el codigo.
+/bun-api/COMMIT
+
 # misc
 .DS_Store
 *.pem

@@ -12,6 +12,17 @@ test("health: el API responde ok sin autenticación", async ({ request }) => {
   expect(body.service).toContain("urbansprout");
 });
 
+test("version: identifica qué commit está corriendo, sin autenticación", async ({ request }) => {
+  const response = await request.get(`${API_URL}/version`);
+  expect(response.status()).toBe(200);
+  const body = (await response.json()) as { commit: string; short: string; environment: string; startedAt: string };
+  expect(typeof body.commit).toBe("string");
+  expect(body.commit.length).toBeGreaterThan(0);
+  expect(body.short).toBe(body.commit.slice(0, 7));
+  expect(body.environment).toBe("test");
+  expect(Number.isNaN(Date.parse(body.startedAt))).toBe(false);
+});
+
 test("products: devuelve la lista de productos activos", async ({ request }) => {
   const response = await request.get(`${API_URL}/products`);
   expect(response.ok()).toBeTruthy();

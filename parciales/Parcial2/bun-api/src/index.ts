@@ -87,6 +87,7 @@ import { invoiceFileName, renderInvoicePdf } from "./invoices";
 import { initializeNotifications, listEmails, sendOrderStatusEmail } from "./notifications";
 import { getPerformanceSnapshot, recordRequest } from "./performance";
 import { PipelineUnavailableError, latestRuns, triggerWorkflow, type PipelineKind } from "./pipelines";
+import { versionInfo } from "./version";
 import { createSetupIntent, detachPaymentMethod, initializePayments, listPaymentMethods } from "./payments";
 
 const port = apiConfig.port;
@@ -499,6 +500,12 @@ app.all("*", async (context) => {
         },
         { origin },
       );
+    }
+
+    // Identidad de la versión desplegada. Público y sin estado: es lo que el CD
+    // consulta para confirmar que el commit que subió es el que está corriendo.
+    if (req.method === "GET" && url.pathname === "/version") {
+      return jsonResponse(versionInfo(), { origin });
     }
 
     if (req.method === "GET" && url.pathname === "/products") {

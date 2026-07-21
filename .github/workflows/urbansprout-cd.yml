@@ -38,45 +38,37 @@ jobs:
       - name: Install Railway CLI
         run: npm install --global @railway/cli
 
+      # El commit viaja dentro del código subido. Así /version puede decir qué
+      # versión está corriendo sin depender de variables de Railway.
+      - name: Stamp the commit being deployed
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: echo "$DEPLOY_SHA" > parciales/Parcial2/bun-api/COMMIT
+
       - name: Deploy all services to Railway staging
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           project="8d2bf25d-6881-4ddc-b930-a4dab99773bb"
           railway up ./parciales/Parcial2 --path-as-root --detach --yes \
             --project "$project" --environment staging --service urbansprout-storefront \
-            --message "staging ${GITHUB_SHA}"
+            --message "staging ${DEPLOY_SHA}"
           railway up ./parciales/Parcial2 --path-as-root --detach --yes \
             --project "$project" --environment staging --service urbansprout-backoffice \
-            --message "staging ${GITHUB_SHA}"
+            --message "staging ${DEPLOY_SHA}"
           railway up ./parciales/Parcial2/bun-api --path-as-root --detach --yes \
             --project "$project" --environment staging --service urbansprout-api \
-            --message "staging ${GITHUB_SHA}"
+            --message "staging ${DEPLOY_SHA}"
 
-      - name: Wait for Railway staging
+      # Verificación real: /health lo contesta igual la instancia vieja, así que
+      # no prueba nada. Acá se exige que /version devuelva el commit que subimos.
+      - name: Verify staging is serving this commit
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
-        run: |
-          sleep 30
-          urls=(
-            "https://urbansprout-storefront-staging.up.railway.app"
-            "https://urbansprout-backoffice-staging.up.railway.app"
-            "https://urbansprout-api-staging.up.railway.app/health"
-          )
-          for url in "${urls[@]}"; do
-            ready=false
-            for attempt in {1..30}; do
-              if curl --fail --silent --show-error --max-time 15 "$url" > /dev/null; then
-                ready=true
-                break
-              fi
-              sleep 10
-            done
-            if [[ "$ready" != "true" ]]; then
-              echo "Staging no quedó saludable: $url" >&2
-              exit 1
-            fi
-          done
+        run: bash .github/scripts/verify-deploy.sh staging "$DEPLOY_SHA"
 
       - name: Tag staging and generate changelog
         env:
@@ -99,32 +91,14 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      # Producción despliega desde la rama conectada, así que Railway ya inyecta
+      # RAILWAY_GIT_COMMIT_SHA y /version lo reporta sin necesidad de sellar nada.
       - name: Promote the tested commit
         run: git push origin "${GITHUB_SHA}:refs/heads/production"
 
-      - name: Wait for Railway production
+      - name: Verify production is serving this commit
         shell: bash
-        run: |
-          sleep 30
-          urls=(
-            "https://urbansprout-storefront-production.up.railway.app"
-            "https://urbansprout-backoffice-production.up.railway.app"
-            "https://urbansprout-api-production.up.railway.app/health"
-          )
-          for url in "${urls[@]}"; do
-            ready=false
-            for attempt in {1..30}; do
-              if curl --fail --silent --show-error --max-time 15 "$url" > /dev/null; then
-                ready=true
-                break
-              fi
-              sleep 10
-            done
-            if [[ "$ready" != "true" ]]; then
-              echo "Producción no quedó saludable: $url" >&2
-              exit 1
-            fi
-          done
+        run: bash .github/scripts/verify-deploy.sh production "$GITHUB_SHA"
 
       - name: Tag production and generate changelog
         env:
