@@ -24,10 +24,11 @@ import { DevolucionesPage, PrivacidadPage, TerminosPage } from "@/pages/legal";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { NetworkStatus, NotFoundPage } from "@/components/system-status";
 import { WishlistButton, WishlistPanel } from "@/components/commerce";
+import { PaymentMethodsPanel } from "@/components/payment-methods";
 import { PrivacyTools } from "@/components/privacy-tools";
 import { commerceApi } from "@/lib/commerce";
 
-type PurchaseStatus = "pending" | "paid" | "cancelled";
+type PurchaseStatus = "pending" | "paid" | "cancelled" | "refunded";
 type ThemeMode = "light" | "dark";
 
 type CustomerPurchase = {
@@ -81,6 +82,7 @@ const purchaseStatusLabels: Record<PurchaseStatus, string> = {
   pending: "Pendiente",
   paid: "Pagada",
   cancelled: "Cancelada",
+  refunded: "Reembolsada",
 };
 
 const FREE_SHIPPING_THRESHOLD_USD = 55;
@@ -935,6 +937,7 @@ function CustomerDashboardPage() {
         ) : null}
       </section>
       <WishlistPanel products={products} />
+      <PaymentMethodsPanel />
       <PrivacyTools />
 
       <section className="panel stack">

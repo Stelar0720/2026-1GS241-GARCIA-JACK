@@ -1438,6 +1438,39 @@ a {
   color: var(--danger);
 }
 
+.status-refunded {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: var(--muted);
+}
+
+/* Tarjetas guardadas (HU-032) */
+.payment-method-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.payment-method-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem;
+}
+
+.payment-method-item small {
+  color: var(--muted);
+}
+
+.payment-method-item .pill {
+  margin-left: 0.5rem;
+}
+
 .access-grid {
   display: grid;
   gap: 0.75rem;
