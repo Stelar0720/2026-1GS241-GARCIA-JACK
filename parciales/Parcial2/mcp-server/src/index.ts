@@ -638,6 +638,65 @@ server.registerTool(
   },
 );
 
+// --- get_translations (HU-060, público) ---
+server.registerTool(
+  "get_translations",
+  {
+    title: "Obtener traducciones",
+    description:
+      "Devuelve las cadenas del storefront para un locale (es/en) y, opcionalmente, una sección puntual (HU-060). Público.",
+    inputSchema: {
+      locale: z.enum(["es", "en"]).default("es"),
+      section: z.string().trim().min(1).optional().describe("nav, catalog, cart, dashboard, checkout, status, errors"),
+    },
+  },
+  async ({ locale, section }) => {
+    const params = new URLSearchParams({ locale });
+    if (section) params.set("section", section);
+    return textResult(await apiGet(`/translations?${params.toString()}`));
+  },
+);
+
+// --- trigger_ci_pipeline (HU-046, ci:trigger) ---
+server.registerTool(
+  "trigger_ci_pipeline",
+  {
+    title: "Disparar pipeline de CI",
+    description:
+      "Dispara el workflow de CI en GitHub Actions y devuelve las ejecuciones recientes para seguir su resultado (HU-046). Requiere ci:trigger.",
+    inputSchema: {
+      action: z.enum(["trigger", "status"]).default("status"),
+      ref: z.string().trim().min(1).optional().describe("Rama a construir; por defecto main"),
+    },
+  },
+  async ({ action, ref }) => {
+    const denied = denyIfMissing("ci:trigger");
+    if (denied) return denied;
+    if (action === "status") return textResult(await apiGet("/pipelines/ci"));
+    return textResult(await apiSend("POST", "/pipelines/ci", ref ? { ref } : {}));
+  },
+);
+
+// --- trigger_deployment (HU-047, deploy:trigger) ---
+server.registerTool(
+  "trigger_deployment",
+  {
+    title: "Disparar despliegue",
+    description:
+      "Dispara el workflow de CD y reporta su progreso (HU-047). Producción sigue exigiendo la aprobación manual del environment protegido. Requiere deploy:trigger.",
+    inputSchema: {
+      action: z.enum(["trigger", "status"]).default("status"),
+      ref: z.string().trim().min(1).optional().describe("Rama a promover; por defecto production"),
+    },
+  },
+  async ({ action, ref }) => {
+    const denied = denyIfMissing("deploy:trigger");
+    if (denied) return denied;
+    if (action === "status") return textResult(await apiGet("/pipelines/deploy"));
+    return textResult(await apiSend("POST", "/pipelines/deploy", ref ? { ref } : {}));
+  },
+);
+
 await loadSession();
 const transport = new StdioServerTransport();
 await server.connect(transport);

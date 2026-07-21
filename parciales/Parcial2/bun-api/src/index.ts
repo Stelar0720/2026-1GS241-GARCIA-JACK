@@ -82,9 +82,11 @@ import { captureError, getErrorFeed, initializeObservability, queryLogs, resolve
 import { createBackup, listBackups, migrateUp, migrationStatus, restoreBackup, rollbackLatestMigration, scheduleDailyBackups } from "./data-ops";
 import { authenticateApiKey, createApiKey, initializeApiKeys, listApiKeys, revokeApiKey, rotateApiKey } from "./api-keys";
 import { deleteUserData, exportUserData } from "./privacy";
+import { DEFAULT_LOCALE, LOCALES, getTranslations } from "./i18n";
 import { invoiceFileName, renderInvoicePdf } from "./invoices";
 import { initializeNotifications, listEmails, sendOrderStatusEmail } from "./notifications";
 import { getPerformanceSnapshot, recordRequest } from "./performance";
+import { PipelineUnavailableError, latestRuns, triggerWorkflow, type PipelineKind } from "./pipelines";
 import { createSetupIntent, detachPaymentMethod, initializePayments, listPaymentMethods } from "./payments";
 
 const port = apiConfig.port;
@@ -506,6 +508,15 @@ app.all("*", async (context) => {
 
     if (req.method === "GET" && url.pathname === "/products/taxonomy") {
       return jsonResponse({ data: await listTaxonomy() }, { origin });
+    }
+
+    // Traducciones del storefront (HU-060). Público: el storefront ya las trae
+    // en el bundle, este endpoint existe para agentes y herramientas externas.
+    if (req.method === "GET" && url.pathname === "/translations") {
+      return jsonResponse({
+        data: getTranslations(url.searchParams.get("locale") ?? DEFAULT_LOCALE, url.searchParams.get("section")?.trim() || undefined),
+        available: LOCALES,
+      }, { origin });
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/uploads/")) {
@@ -1307,6 +1318,31 @@ app.all("*", async (context) => {
           "Content-Disposition": `attachment; filename="${invoiceFileName(order.id)}"`,
         },
       });
+    }
+
+    // Disparo y seguimiento de los pipelines de CI/CD (HU-046, HU-047).
+    const pipelineMatch = url.pathname.match(/^\/pipelines\/(ci|deploy)$/);
+    if (pipelineMatch) {
+      const kind = pipelineMatch[1] as PipelineKind;
+      const auth = authorize(req, kind === "ci" ? "ci:trigger" : "deploy:trigger", origin);
+      if ("error" in auth) return auth.error;
+
+      try {
+        if (req.method === "GET") {
+          return jsonResponse({ data: await latestRuns(kind, Number(url.searchParams.get("limit")) || undefined) }, { origin });
+        }
+        if (req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as { ref?: string };
+          const result = await triggerWorkflow(kind, { ref: typeof body.ref === "string" ? body.ref : undefined });
+          await recordAuditLog({ actor: auth.role, action: `pipeline.${kind}`, resource: result.workflow, details: result.ref });
+          return jsonResponse({ ok: true, ...result, runs: await latestRuns(kind, 3) }, { status: 202, origin });
+        }
+      } catch (error) {
+        if (error instanceof PipelineUnavailableError) {
+          return errorResponse("SERVICE_UNAVAILABLE", error.message, { status: 503, origin });
+        }
+        return errorResponse("CONFLICT", error instanceof Error ? error.message : "No se pudo operar el pipeline.", { status: 409, origin });
+      }
     }
 
     // Bandeja de salida de notificaciones por email (HU-055). Deja evidencia

@@ -7,6 +7,7 @@ import VanillaTilt from "vanilla-tilt";
 import { fetchProductsFromApi, fallbackProducts, Product } from "@/lib/catalog";
 import { getAdminAppUrl, getApiUrl, isClerkConfigured } from "@/lib/env";
 import { getUserRole } from "@/lib/roles";
+import { useLocale } from "@/lib/i18n";
 import { getApiErrorMessage, type ApiErrorBody } from "@/lib/api-error";
 import {
   FaqSection,
@@ -22,6 +23,7 @@ import {
 import { ProductDetailPage } from "@/pages/product-detail";
 import { DevolucionesPage, PrivacidadPage, TerminosPage } from "@/pages/legal";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { LanguageSelector } from "@/components/locale";
 import { NetworkStatus, NotFoundPage } from "@/components/system-status";
 import { WishlistButton, WishlistPanel } from "@/components/commerce";
 import { PaymentMethodsPanel } from "@/components/payment-methods";
@@ -76,13 +78,6 @@ type StorefrontCart = {
   updateCartQuantity: (productId: string, quantity: number) => void;
   applyCoupon: (code: string) => Promise<void>;
   checkoutCart: () => Promise<void>;
-};
-
-const purchaseStatusLabels: Record<PurchaseStatus, string> = {
-  pending: "Pendiente",
-  paid: "Pagada",
-  cancelled: "Cancelada",
-  refunded: "Reembolsada",
 };
 
 const FREE_SHIPPING_THRESHOLD_USD = 55;
@@ -613,23 +608,25 @@ function RootLayout({ children, cart }: { children: React.ReactNode; cart: Store
   const role = getUserRole(user);
   const adminAppUrl = getAdminAppUrl();
   const { themeMode, toggleThemeMode } = useThemeMode();
+  const { t } = useLocale();
 
   return (
     <>
       <ExperienceEffects />
       <header className="nav">
         <div className="container nav-inner">
-          <Link to="/" className="brand" aria-label="Ir al inicio de UrbanSprout">
+          <Link to="/" className="brand" aria-label={t("nav.brandAria")}>
             <span aria-hidden="true">🌿</span>
             UrbanSprout
           </Link>
           <div className="nav-actions">
+            <LanguageSelector />
             <button
               className="theme-toggle"
               type="button"
               onClick={toggleThemeMode}
-              aria-label={themeMode === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-              title={themeMode === "dark" ? "Modo claro" : "Modo oscuro"}
+              aria-label={themeMode === "dark" ? t("nav.toLightMode") : t("nav.toDarkMode")}
+              title={themeMode === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
             >
               <span aria-hidden="true">{themeMode === "dark" ? "☀" : "☾"}</span>
             </button>
@@ -648,11 +645,11 @@ function RootLayout({ children, cart }: { children: React.ReactNode; cart: Store
             {clerkReady && user ? (
               <>
                 <Link to="/dashboard" className="button button-outline">
-                  Panel
+                  {t("nav.panel")}
                 </Link>
                 {role === "admin" ? (
                   <a href={adminAppUrl} className="button button-outline" target="_blank" rel="noreferrer">
-                    Admin
+                    {t("nav.admin")}
                   </a>
                 ) : null}
                 <UserButton />
@@ -660,12 +657,12 @@ function RootLayout({ children, cart }: { children: React.ReactNode; cart: Store
             ) : clerkReady ? (
               <SignInButton mode="modal">
                 <button className="button button-outline" type="button">
-                  Iniciar sesión
+                  {t("nav.signIn")}
                 </button>
               </SignInButton>
             ) : (
               <button className="button button-outline" type="button" disabled>
-                Configura Clerk para login
+                {t("nav.clerkMissing")}
               </button>
             )}
           </div>
@@ -686,6 +683,8 @@ function HomePage({
   viewCart,
   authAction,
 }: StorefrontCart & { authAction?: React.ReactNode }) {
+  const { t } = useLocale();
+  // "Todas" es el valor interno del filtro; solo su etiqueta se traduce.
   const [category, setCategory] = useState("Todas");
   const categories = useMemo(() => ["Todas", ...Array.from(new Set(products.map((product) => product.category || "Otros")))], [products]);
   const visibleProducts = category === "Todas" ? products : products.filter((product) => (product.category || "Otros") === category);
@@ -699,15 +698,13 @@ function HomePage({
 
       <section id="catalogo" className="products">
         <div className="container">
-          <p className="section-kicker">Catálogo</p>
+          <p className="section-kicker">{t("catalog.kicker")}</p>
           <div className="catalog-header">
-            <h2 className="section-title">Kits para arrancar en una tarde</h2>
-            <p className="meta catalog-note">
-              Todos incluyen envío en 24–48 h y garantía de germinación de 30 días.
-            </p>
+            <h2 className="section-title">{t("catalog.title")}</h2>
+            <p className="meta catalog-note">{t("catalog.note")}</p>
           </div>
-          <div className="catalog-filters" aria-label="Filtrar por categoría">
-            {categories.map((item) => <button type="button" key={item} className={item === category ? "active" : ""} aria-pressed={item === category} onClick={() => setCategory(item)}>{item}</button>)}
+          <div className="catalog-filters" aria-label={t("catalog.filterLabel")}>
+            {categories.map((item) => <button type="button" key={item} className={item === category ? "active" : ""} aria-pressed={item === category} onClick={() => setCategory(item)}>{item === "Todas" ? t("catalog.all") : item}</button>)}
           </div>
           {loadingProducts ? (
             <p className="loading-text">Cargando productos...</p>
@@ -824,6 +821,7 @@ function CustomerDashboardPage() {
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>(fallbackProducts);
   const [invoiceBusy, setInvoiceBusy] = useState<string | null>(null);
+  const { t } = useLocale();
 
   async function handleInvoiceDownload(orderId: string) {
     setInvoiceBusy(orderId);
@@ -873,10 +871,10 @@ function CustomerDashboardPage() {
       <section className="stack panel dashboard-hero">
         <div className="dashboard-heading">
           <div>
-            <h1 className="section-title">Mi cuenta</h1>
-            <p className="meta">Gestiona tus compras, estados de pago y accesos de UrbanSprout.</p>
+            <h1 className="section-title">{t("dashboard.title")}</h1>
+            <p className="meta">{t("dashboard.subtitle")}</p>
           </div>
-          <p className="role-badge">Tipo de usuario: {role}</p>
+          <p className="role-badge">{t("dashboard.userType")}: {role}</p>
         </div>
 
         {payment === "success" ? (
@@ -887,30 +885,30 @@ function CustomerDashboardPage() {
 
         <div className="account-summary">
           <div>
-            <span>Compras totales</span>
+            <span>{t("dashboard.totalPurchases")}</span>
             <strong>{purchases.length}</strong>
           </div>
           <div>
-            <span>Accesos activos</span>
+            <span>{t("dashboard.activeAccess")}</span>
             <strong>{paidPurchases.length}</strong>
           </div>
           <div>
-            <span>Pendientes</span>
+            <span>{t("dashboard.pending")}</span>
             <strong>{pendingPurchases.length}</strong>
           </div>
           <div>
-            <span>Total pagado</span>
+            <span>{t("dashboard.totalPaid")}</span>
             <strong>{formatMoney(totalSpent)}</strong>
           </div>
         </div>
 
         <div className="cta-row">
           <Link className="button button-primary" to="/">
-            Volver al catálogo
+            {t("dashboard.backToCatalog")}
           </Link>
           {role === "admin" ? (
             <a className="button button-outline" href={adminAppUrl} target="_blank" rel="noreferrer">
-              Ir al backoffice
+              {t("dashboard.goToBackoffice")}
             </a>
           ) : null}
         </div>
@@ -919,20 +917,20 @@ function CustomerDashboardPage() {
       <section className="panel stack">
         <div className="section-inline-header">
           <div>
-            <h2 className="compact-title">Mis compras</h2>
-            <p className="meta">Historial completo de órdenes asociadas a tu cuenta.</p>
+            <h2 className="compact-title">{t("dashboard.myPurchases")}</h2>
+            <p className="meta">{t("dashboard.purchasesNote")}</p>
           </div>
         </div>
 
-        {loadingPurchases ? <p className="loading-text">Cargando compras...</p> : null}
+        {loadingPurchases ? <p className="loading-text">{t("dashboard.loadingPurchases")}</p> : null}
         {purchaseError ? <p className="status-error">{purchaseError}</p> : null}
 
         {!loadingPurchases && !purchaseError && purchases.length === 0 ? (
           <div className="empty-state">
-            <h3>No tienes compras registradas</h3>
-            <p>Cuando compres un kit, aparecerá aquí con su estado y acceso.</p>
+            <h3>{t("dashboard.noPurchasesTitle")}</h3>
+            <p>{t("dashboard.noPurchasesBody")}</p>
             <Link className="button button-primary" to="/">
-              Explorar catálogo
+              {t("dashboard.exploreCatalog")}
             </Link>
           </div>
         ) : null}
@@ -952,7 +950,7 @@ function CustomerDashboardPage() {
                   <div className="purchase-title-row">
                     <h3>{purchase.productName ?? purchase.productId}</h3>
                     <span className={`status-pill status-${purchase.status}`}>
-                      {purchaseStatusLabels[purchase.status]}
+                      {t(`status.${purchase.status}`)}
                     </span>
                   </div>
                   <p className="meta">{purchase.productDescription ?? "Kit UrbanSprout"}</p>
@@ -970,7 +968,7 @@ function CustomerDashboardPage() {
                       disabled={invoiceBusy === purchase.id}
                       onClick={() => void handleInvoiceDownload(purchase.id)}
                     >
-                      {invoiceBusy === purchase.id ? "Generando..." : "Descargar factura"}
+                      {invoiceBusy === purchase.id ? t("dashboard.generatingInvoice") : t("dashboard.downloadInvoice")}
                     </button>
                   ) : null}
                 </div>
@@ -984,7 +982,7 @@ function CustomerDashboardPage() {
       <PrivacyTools />
 
       <section className="panel stack">
-        <h2 className="compact-title">Mis accesos</h2>
+        <h2 className="compact-title">{t("dashboard.myAccess")}</h2>
         {paidPurchases.length === 0 ? (
           <p className="meta">Tus accesos se activan automáticamente cuando una compra queda pagada.</p>
         ) : (
@@ -1162,6 +1160,7 @@ function AppWithoutClerk() {
   const adminAppUrl = getAdminAppUrl();
   const { themeMode, toggleThemeMode } = useThemeMode();
   const cart = useStorefrontCart(null, null);
+  const { t } = useLocale();
 
   return (
     <>
@@ -1169,17 +1168,18 @@ function AppWithoutClerk() {
       <NetworkStatus />
       <header className="nav">
         <div className="container nav-inner">
-          <Link to="/" className="brand" aria-label="Ir al inicio de UrbanSprout">
+          <Link to="/" className="brand" aria-label={t("nav.brandAria")}>
             <span aria-hidden="true">🌿</span>
             UrbanSprout
           </Link>
           <div className="nav-actions">
+            <LanguageSelector />
             <button
               className="theme-toggle"
               type="button"
               onClick={toggleThemeMode}
-              aria-label={themeMode === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-              title={themeMode === "dark" ? "Modo claro" : "Modo oscuro"}
+              aria-label={themeMode === "dark" ? t("nav.toLightMode") : t("nav.toDarkMode")}
+              title={themeMode === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
             >
               <span aria-hidden="true">{themeMode === "dark" ? "☀" : "☾"}</span>
             </button>
@@ -1196,7 +1196,7 @@ function AppWithoutClerk() {
               applyingCoupon={cart.applyingCoupon} applyCoupon={cart.applyCoupon}
             />
             <button className="button button-outline" type="button" disabled>
-              Configura Clerk para login
+              {t("nav.clerkMissing")}
             </button>
           </div>
         </div>

@@ -254,6 +254,42 @@ test("facturas: exigen sesión y solo existen para órdenes pagadas (HU-033)", a
   ).toBe(404);
 });
 
+test("traducciones: públicas, con es/en completos y fallback de locale (HU-060)", async ({ request }) => {
+  const spanish = await request.get(`${API_URL}/translations?locale=es`);
+  expect(spanish.status()).toBe(200);
+  const spanishBody = (await spanish.json()) as { data: { locale: string; data: Record<string, Record<string, string>> }; available: string[] };
+  expect(spanishBody.available).toEqual(["es", "en"]);
+  expect(spanishBody.data.data.nav.signIn).toBe("Iniciar sesión");
+
+  const english = await request.get(`${API_URL}/translations?locale=en&section=nav`);
+  expect(english.status()).toBe(200);
+  const englishBody = (await english.json()) as { data: { locale: string; sections: string[]; data: Record<string, Record<string, string>> } };
+  expect(englishBody.data.sections).toEqual(["nav"]);
+  expect(englishBody.data.data.nav.signIn).toBe("Sign in");
+
+  // Un locale no soportado degrada al español en lugar de fallar.
+  const fallback = await request.get(`${API_URL}/translations?locale=fr`);
+  expect(fallback.status()).toBe(200);
+  expect(((await fallback.json()) as { data: { locale: string } }).data.locale).toBe("es");
+});
+
+test("pipelines: exigen permiso propio y degradan sin token de GitHub (HU-046/047)", async ({ request }) => {
+  expect((await request.get(`${API_URL}/pipelines/ci`)).status()).toBe(401);
+  expect((await request.get(`${API_URL}/pipelines/deploy`)).status()).toBe(401);
+
+  const forbidden = await request.get(`${API_URL}/pipelines/ci`, { headers: { Authorization: "Bearer e2e-support-key" } });
+  expect(forbidden.status()).toBe(403);
+
+  // La key de CI sí tiene el permiso: sin GITHUB_TOKEN configurado el contrato
+  // es un 503 explícito, no un 500 opaco.
+  const unavailable = await request.get(`${API_URL}/pipelines/ci`, { headers: { Authorization: "Bearer e2e-ci-key" } });
+  expect(unavailable.status()).toBe(503);
+  expect(((await unavailable.json()) as { error: { code: string } }).error.code).toBe("SERVICE_UNAVAILABLE");
+
+  const dispatch = await request.post(`${API_URL}/pipelines/deploy`, { headers: { Authorization: "Bearer e2e-ci-key" }, data: {} });
+  expect(dispatch.status()).toBe(503);
+});
+
 test("matriz de roles: admin concentra reembolsos y CI dispara pipelines", async ({ request }) => {
   const response = await request.get(`${API_URL}/auth/roles`, { headers: { Authorization: "Bearer e2e-admin-key" } });
   expect(response.status()).toBe(200);

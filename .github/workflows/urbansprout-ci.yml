@@ -74,7 +74,7 @@ jobs:
         working-directory: parciales/Parcial2/bun-api
 
       - name: Run pure unit tests with coverage
-        run: bun test src/business.test.ts --coverage --coverage-reporter=lcov
+        run: bun test src/business.test.ts src/email-template.test.ts src/performance.test.ts src/invoices.test.ts src/i18n.test.ts --coverage --coverage-reporter=lcov
         working-directory: parciales/Parcial2/bun-api
 
       - name: Run React component tests

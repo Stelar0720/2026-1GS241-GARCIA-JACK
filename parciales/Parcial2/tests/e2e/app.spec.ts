@@ -71,6 +71,26 @@ test("experiencia: renderiza cursor personalizado y hero animable", async ({ pag
   await expect(page.locator("[data-hero-reveal]")).toHaveCount(5);
 });
 
+test("idioma: el selector cambia el sitio a inglés y persiste tras recargar (HU-060)", async ({ page }) => {
+  // Cada test corre en un contexto limpio: localStorage arranca vacío, así que
+  // no hace falta borrarlo (y un addInitScript lo volvería a borrar en el reload).
+  await page.goto("/");
+
+  // Arranca en español, sin depender del idioma del navegador.
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
+  await expect(page.getByRole("heading", { name: "Kits para arrancar en una tarde" })).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Idioma" }).selectOption("en");
+
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByRole("heading", { name: "Kits you can start in one afternoon" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByRole("heading", { name: "Kits you can start in one afternoon" })).toBeVisible();
+});
+
 test("tema: el toggle claro/oscuro persiste tras recargar", async ({ page }) => {
   await page.goto("/");
 

@@ -8,19 +8,23 @@ El servidor se lanza con una API key (`MCP_API_KEY`) que lo identifica ante el `
 
 | Rol | Key (env) | Permisos |
 |---|---|---|
-| `public` | (sin key) | solo `search_products` |
+| `public` | (sin key) | `search_products` y `get_translations` |
 | `client` | `MCP_CLIENT_KEY` | `orders:cancel` + búsqueda |
 | `support` | `MCP_SUPPORT_KEY` | `catalog:read`, `orders:read`, `auth:read` |
 | `admin` | `MCP_ADMIN_KEY` | todos |
-| `ci` | `MCP_CI_KEY` | ejecución de suites QA |
+| `ci` | `MCP_CI_KEY` | suites QA + `ci:trigger`, `deploy:trigger` |
+| `developer` | `MCP_DEVELOPER_KEY` | `logs:read`, `errors:read/resolve`, `perf:read` |
 
 Las keys las define el `bun-api` por variables de entorno (`MCP_ADMIN_KEY`, `MCP_SUPPORT_KEY`, `MCP_CLIENT_KEY`). El servidor MCP se lanza con **una** de esas keys en `MCP_API_KEY`.
 
 ## Tools
 
+Las **26 herramientas** del anexo de historias de usuario (A13) están implementadas.
+
 | Tool | HU | Permiso | Qué hace |
 |---|---|---|---|
 | `search_products` | HU-053 | público | Busca/filtra productos, paginado |
+| `get_translations` | HU-060 | público | Cadenas del storefront por locale (es/en) y sección |
 | `get_role_permissions` | HU-050 | `auth:read` | Matriz de roles y permisos |
 | `authorize_user` | HU-025 | `auth:read` | Valida si un rol tiene un permiso |
 | `get_business_metrics` | HU-036 | `metrics:read` | Revenue, órdenes por estado, AOV |
@@ -37,6 +41,11 @@ Las keys las define el `bun-api` por variables de entorno (`MCP_ADMIN_KEY`, `MCP
 | `manage_wishlist` | HU-058 | JWT Clerk (`MCP_USER_TOKEN`) | Lista, agrega o elimina productos de la wishlist del cliente |
 | `manage_api_keys` | HU-027 | admin | Crea, lista, rota y revoca API keys hash-only |
 | `manage_backups` | HU-063 | admin | Crea, lista y restaura snapshots MongoDB confirmados |
+| `process_refund` | HU-030 | `orders:refund` | Reembolsa total o parcialmente una orden pagada |
+| `manage_payment_methods` | HU-032 | JWT Clerk (`MCP_USER_TOKEN`) | Lista, agrega (SetupIntent) o elimina tarjetas guardadas |
+| `get_performance_metrics` | HU-035 | `perf:read` | Latencia P50/P95/P99, tasa 4xx/5xx y uptime |
+| `trigger_ci_pipeline` | HU-046 | `ci:trigger` | Dispara el workflow de CI y reporta sus ejecuciones |
+| `trigger_deployment` | HU-047 | `deploy:trigger` | Dispara el workflow de CD y sigue su progreso |
 
 ## Correrlo
 
@@ -76,4 +85,6 @@ Agregar a la config de MCP servers (`.mcp.json`):
 
 Cambiando `MCP_API_KEY` cambia el rol y, por lo tanto, qué tools quedan habilitadas.
 
-`MCP_USER_TOKEN` es opcional para el resto de tools y obligatorio para `manage_wishlist`. Debe ser un token corto de sesión, no `CLERK_SECRET_KEY`. La tool no recibe `userId`: la API obtiene al usuario del claim `sub` del JWT.
+`MCP_USER_TOKEN` es opcional para el resto de tools y obligatorio para `manage_wishlist` y `manage_payment_methods`. Debe ser un token corto de sesión, no `CLERK_SECRET_KEY`. Esas tools no reciben `userId`: la API obtiene al usuario del claim `sub` del JWT.
+
+`trigger_ci_pipeline` y `trigger_deployment` necesitan además `GITHUB_TOKEN` configurado en el **bun-api** (no en el MCP). Sin él, ambas responden 503 explícito en lugar de fallar de forma opaca. El despliegue a producción sigue exigiendo la aprobación manual del environment protegido: el MCP puede disparar el workflow, no saltarse el gate.
