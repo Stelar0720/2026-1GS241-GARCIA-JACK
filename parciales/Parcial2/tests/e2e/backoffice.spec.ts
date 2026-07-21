@@ -72,6 +72,16 @@ test.describe("Backoffice admin", () => {
     await expect(ordersSection.locator(".table-head")).toContainText("Reembolso");
   });
 
+  test("muestra el panel de rendimiento con percentiles y uptime (HU-035)", async ({ page }) => {
+    await page.goto(BACKOFFICE_URL);
+    await expect(page.getByText("Cargando datos del backoffice...")).toHaveCount(0, { timeout: 15_000 });
+
+    const panel = page.locator("section.panel", { hasText: "Rendimiento del API" }).first();
+    await expect(panel.getByRole("heading", { name: "Rendimiento del API" })).toBeVisible();
+    await expect(panel.getByText("Latencia global")).toBeVisible({ timeout: 15_000 });
+    await expect(panel.locator(".perf-table .table-head")).toContainText("P95");
+  });
+
   test("gestiona invitación, rol y suspensión de un usuario", async ({ page }) => {
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(BACKOFFICE_URL);

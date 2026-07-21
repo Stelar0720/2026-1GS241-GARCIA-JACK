@@ -189,6 +189,24 @@ function getPurchaseAccessText(status: PurchaseStatus) {
   return "Sin acceso";
 }
 
+// Descarga la factura en PDF de una orden pagada (HU-033). El PDF lo genera el
+// API; acá solo se autentica la descarga y se dispara el guardado del blob.
+async function downloadInvoice(orderId: string, token: string) {
+  const response = await fetch(`${getApiUrl()}/orders/${encodeURIComponent(orderId)}/invoice`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
+    throw new Error(getApiErrorMessage(body, "No se pudo descargar la factura."));
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `factura-${orderId}.pdf`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function fetchCustomerPurchases(userId: string, token: string): Promise<CustomerPurchase[]> {
   let response: Response;
 
@@ -805,6 +823,21 @@ function CustomerDashboardPage() {
   const [loadingPurchases, setLoadingPurchases] = useState(true);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>(fallbackProducts);
+  const [invoiceBusy, setInvoiceBusy] = useState<string | null>(null);
+
+  async function handleInvoiceDownload(orderId: string) {
+    setInvoiceBusy(orderId);
+    setPurchaseError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Tu sesión expiró. Inicia sesión nuevamente.");
+      await downloadInvoice(orderId, token);
+    } catch (error) {
+      setPurchaseError(error instanceof Error ? error.message : "No se pudo descargar la factura.");
+    } finally {
+      setInvoiceBusy(null);
+    }
+  }
 
   useEffect(() => {
     const userId = user?.id;
@@ -930,6 +963,16 @@ function CustomerDashboardPage() {
                     <span>Monto: {formatMoney(purchase.amountUsd)}</span>
                     <span>Acceso: {getPurchaseAccessText(purchase.status)}</span>
                   </div>
+                  {purchase.status === "paid" || purchase.status === "refunded" ? (
+                    <button
+                      className="button button-outline button-compact"
+                      type="button"
+                      disabled={invoiceBusy === purchase.id}
+                      onClick={() => void handleInvoiceDownload(purchase.id)}
+                    >
+                      {invoiceBusy === purchase.id ? "Generando..." : "Descargar factura"}
+                    </button>
+                  ) : null}
                 </div>
               </article>
             ))}

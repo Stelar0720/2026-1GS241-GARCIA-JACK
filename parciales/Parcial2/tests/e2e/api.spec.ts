@@ -220,6 +220,40 @@ test("notificaciones: la bandeja de salida exige permiso y responde una lista (H
   expect(Array.isArray(((await listed.json()) as { data: unknown[] }).data)).toBe(true);
 });
 
+test("rendimiento: expone percentiles y uptime solo con perf:read (HU-035)", async ({ request }) => {
+  expect((await request.get(`${API_URL}/observability/performance`)).status()).toBe(401);
+  expect(
+    (await request.get(`${API_URL}/observability/performance`, { headers: { Authorization: "Bearer e2e-ci-key" } })).status(),
+  ).toBe(403);
+
+  const response = await request.get(`${API_URL}/observability/performance`, {
+    headers: { Authorization: "Bearer e2e-admin-key" },
+  });
+  expect(response.status()).toBe(200);
+  const snapshot = ((await response.json()) as {
+    data: { uptime: { seconds: number; healthy: boolean }; totals: { requests: number; p95: number }; routes: { route: string }[] };
+  }).data;
+  // El propio tráfico de la suite ya alimentó las métricas.
+  expect(snapshot.totals.requests).toBeGreaterThan(0);
+  expect(snapshot.uptime.seconds).toBeGreaterThanOrEqual(0);
+  expect(typeof snapshot.uptime.healthy).toBe("boolean");
+  expect(snapshot.routes.some((route) => route.route.includes("/products"))).toBe(true);
+});
+
+test("facturas: exigen sesión y solo existen para órdenes pagadas (HU-033)", async ({ request }) => {
+  expect((await request.get(`${API_URL}/orders/ord-inexistente/invoice`)).status()).toBe(401);
+
+  const missing = await request.get(`${API_URL}/orders/ord-inexistente/invoice`, {
+    headers: { Authorization: "Bearer e2e-client-key", "X-Customer-Id": "e2e-customer-invoice" },
+  });
+  expect(missing.status()).toBe(404);
+
+  // Un rol con orders:read (backoffice) también puede emitirla.
+  expect(
+    (await request.get(`${API_URL}/orders/ord-inexistente/invoice`, { headers: { Authorization: "Bearer e2e-admin-key" } })).status(),
+  ).toBe(404);
+});
+
 test("matriz de roles: admin concentra reembolsos y CI dispara pipelines", async ({ request }) => {
   const response = await request.get(`${API_URL}/auth/roles`, { headers: { Authorization: "Bearer e2e-admin-key" } });
   expect(response.status()).toBe(200);

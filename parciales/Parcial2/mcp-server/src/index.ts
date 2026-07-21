@@ -577,6 +577,22 @@ server.registerTool(
   },
 );
 
+// --- get_performance_metrics (HU-035, perf:read) ---
+server.registerTool(
+  "get_performance_metrics",
+  {
+    title: "Métricas de rendimiento",
+    description:
+      "Latencia P50/P95/P99 por endpoint, tasa de error 4xx/5xx y uptime del API (HU-035). Requiere perf:read.",
+    inputSchema: { route: z.string().trim().min(1).optional().describe("Filtra por ruta, ej. 'GET /products'") },
+  },
+  async ({ route }) => {
+    const denied = denyIfMissing("perf:read");
+    if (denied) return denied;
+    return textResult(await apiGet(`/observability/performance${route ? `?route=${encodeURIComponent(route)}` : ""}`));
+  },
+);
+
 // --- process_refund (HU-030, orders:refund) ---
 server.registerTool(
   "process_refund",

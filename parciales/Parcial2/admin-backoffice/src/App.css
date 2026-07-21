@@ -259,6 +259,33 @@ body {
   grid-template-columns: 1.1fr 1.4fr 1.4fr 0.7fr 0.8fr 1fr 1.6fr;
 }
 
+/* Rendimiento (HU-035) */
+.perf-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+.perf-summary > div {
+  display: grid;
+  gap: 0.15rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 0.8rem;
+  background: white;
+}
+.perf-summary span { color: #64748b; font-size: 0.82rem; }
+.perf-summary strong { font-size: 1.15rem; display: flex; align-items: center; gap: 0.45rem; }
+.perf-summary small { color: #64748b; }
+.perf-dot { width: 0.6rem; height: 0.6rem; border-radius: 999px; display: inline-block; }
+.perf-ok { background: #16a34a; }
+.perf-down { background: #dc2626; color: #dc2626; }
+.perf-table .table-row { grid-template-columns: 2.2fr 0.6fr 0.7fr 0.7fr 0.7fr 1fr; }
+.perf-table code { font-size: 0.82rem; word-break: break-all; }
+
+@media (max-width: 760px) {
+  .perf-table .table-row { grid-template-columns: 1fr; }
+}
+
 /* Reembolsos (HU-030) */
 .refund-cell { display: grid; grid-template-columns: 5rem 1fr auto; gap: 0.4rem; align-items: center; }
 .refund-cell input { min-width: 0; }
