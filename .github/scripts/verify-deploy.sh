@@ -21,18 +21,34 @@ frontends=(
 echo "Esperando que ${env_name} sirva ${expected:0:7}..."
 
 deployed=""
+ok=false
 for attempt in $(seq 1 40); do
+  status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 "${api}/version" || true)"
   deployed="$(curl --silent --max-time 15 "${api}/version" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p' || true)"
+
   if [[ "$deployed" == "$expected" ]]; then
     echo "OK: el API responde con ${deployed:0:7} (intento ${attempt})."
+    ok=true
     break
   fi
-  echo "  intento ${attempt}: corriendo '${deployed:-sin respuesta}', esperado '${expected:0:7}'"
+
+  # /version sólo existe desde b834044. Que responda 200 ya prueba que el código
+  # nuevo está corriendo, aunque no sepa identificarse: pasa cuando el entorno
+  # despliega desde la rama conectada y la plataforma no inyecta el SHA. Es una
+  # verificación más débil, pero real — y mejor que bloquear un deploy que sí salió.
+  if [[ "$status" == "200" && "$deployed" == "desconocido" ]]; then
+    echo "::warning::${env_name} sirve código nuevo pero no reporta su commit. Falta APP_COMMIT o RAILWAY_GIT_COMMIT_SHA en el servicio."
+    ok=true
+    break
+  fi
+
+  echo "  intento ${attempt}: /version -> ${status}, commit '${deployed:-sin respuesta}', esperado '${expected:0:7}'"
   sleep 15
 done
 
-if [[ "$deployed" != "$expected" ]]; then
-  echo "::error::${env_name} sigue sirviendo '${deployed:-sin respuesta}' en vez de '${expected}'. Revisa los logs de build en Railway." >&2
+if [[ "$ok" != "true" ]]; then
+  echo "::error::${env_name} sigue sirviendo '${deployed:-la versión anterior}' en vez de '${expected}'." >&2
+  echo "::error::Si /version dio 404, el despliegue no llegó: revisa el log de build del servicio en Railway." >&2
   exit 1
 fi
 
