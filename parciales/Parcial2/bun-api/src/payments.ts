@@ -22,7 +22,12 @@ export async function initializePayments() {
   await links.createIndex({ userId: 1 }, { unique: true });
 }
 
+export class PaymentsUnavailableError extends Error {}
+
 export async function resolveStripeCustomerId(stripe: Stripe, userId: string, email?: string | null) {
+  // `links` queda sin asignar si la inicialización falló. Mejor un 503 explícito
+  // que un 500 opaco por leer una propiedad de undefined.
+  if (!links) throw new PaymentsUnavailableError("El registro de clientes de Stripe no está disponible.");
   const existing = await links.findOne({ userId });
   if (existing) return existing.customerId;
   const customer = await stripe.customers.create({

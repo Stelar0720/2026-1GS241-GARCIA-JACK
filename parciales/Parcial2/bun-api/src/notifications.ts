@@ -67,7 +67,9 @@ export async function sendOrderStatusEmail(input: {
   productName?: string | null;
   amountUsd: number;
 }): Promise<EmailRecord | null> {
-  if (!input.to?.trim()) return null;
+  // `outbox` queda sin asignar si la inicialización falló; los avisos son
+  // accesorios y no deben tumbar un cobro ni un reembolso.
+  if (!outbox || !input.to?.trim()) return null;
   const { subject, html } = renderOrderEmail({
     status: input.status,
     orderId: input.orderId,
@@ -97,6 +99,7 @@ export async function sendOrderStatusEmail(input: {
 }
 
 export async function listEmails(input: { orderId?: string; to?: string; limit?: number } = {}) {
+  if (!outbox) return [];
   const filter: Filter<EmailRecord> = {};
   if (input.orderId) filter.orderId = input.orderId;
   if (input.to) filter.to = input.to.trim().toLowerCase();
