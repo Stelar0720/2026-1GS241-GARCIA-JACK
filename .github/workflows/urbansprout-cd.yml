@@ -35,8 +35,15 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      # Pinned a propósito. El CLI se instalaba con `latest` y los despliegues
+      # dejaron de surtir efecto justo cuando salieron 5.27.1 (20-jul) y 5.27.2
+      # (21-jul): el último deploy que sí llegó fue el 17 de julio, con 5.27.0.
+      # Una herramienta de despliegue que se actualiza sola convierte cualquier
+      # release de un tercero en un cambio en producción sin revisión.
       - name: Install Railway CLI
-        run: npm install --global @railway/cli
+        run: |
+          npm install --global @railway/cli@5.27.0
+          railway --version
 
       # El commit viaja dentro del código subido. Va en src/ porque el Dockerfile
       # del API solo hace `COPY src/ ./src/`: un archivo en la raíz del servicio
@@ -59,7 +66,10 @@ jobs:
           railway up ./parciales/Parcial2 --path-as-root --detach --yes \
             --project "$project" --environment staging --service urbansprout-backoffice \
             --message "staging ${DEPLOY_SHA}"
-          railway up ./parciales/Parcial2/bun-api --path-as-root --detach --yes \
+          # El API va SIN --detach: es el servicio cuya versión verificamos
+          # después, así que su build tiene que fallar acá y no diez minutos más
+          # tarde en forma de "sigue sirviendo la versión vieja".
+          railway up ./parciales/Parcial2/bun-api --path-as-root --yes \
             --project "$project" --environment staging --service urbansprout-api \
             --message "staging ${DEPLOY_SHA}"
 

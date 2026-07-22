@@ -18,6 +18,21 @@ Validado el **14 de julio de 2026**.
 
 `main` despliega automáticamente a staging únicamente después de que `UrbanSprout CI` termina correctamente. Railway espera los check suites requeridos antes de construir.
 
+## Si un despliegue "pasa" pero no cambia nada
+
+Síntoma: el CD da verde, `/health` responde 200, pero las rutas nuevas devuelven
+404 y las viejas 401. Eso es una versión anterior corriendo.
+
+Orden para diagnosticarlo:
+
+1. `curl <api>/version` — si el `commit` no es el de la rama, no desplegó. Punto.
+2. Mirá la salida del step `Deploy all services to Railway staging`. Si el
+   `railway up` no imprimió *nada* (ni "Indexing", ni "Uploading", ni una URL de
+   build), el CLI no hizo el trabajo aunque haya salido con código 0.
+3. Revisá la versión del CLI que se instaló. Está pinneada en el workflow
+   justamente porque un release de Railway rompió el despliegue en silencio.
+4. Recién ahí, el dashboard de Railway → servicio → Deployments → log de build.
+
 ## Cómo saber qué versión está corriendo
 
 ```bash
