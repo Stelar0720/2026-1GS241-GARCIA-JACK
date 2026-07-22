@@ -88,7 +88,7 @@ import { initializeNotifications, listEmails, sendOrderStatusEmail } from "./not
 import { getPerformanceSnapshot, recordRequest } from "./performance";
 import { PipelineUnavailableError, latestRuns, triggerWorkflow, type PipelineKind } from "./pipelines";
 import { versionInfo } from "./version";
-import { createSetupIntent, detachPaymentMethod, initializePayments, listPaymentMethods } from "./payments";
+import { PaymentsUnavailableError, createSetupIntent, detachPaymentMethod, initializePayments, listPaymentMethods } from "./payments";
 
 const port = apiConfig.port;
 const uploadsDir = join(process.cwd(), "public", "uploads");
@@ -441,8 +441,22 @@ await migrateUp(db);
 await initializeApiKeys(db);
 scheduleDailyBackups(db);
 await initializeObservability();
-await initializeNotifications();
-await initializePayments();
+
+// La bandeja de emails y el mapeo de customers de Stripe son accesorios: solo
+// preparan colecciones e índices. Si Atlas rechaza uno de esos comandos, el API
+// tiene que seguir vendiendo igual, no morir en el arranque y quedar en
+// crash-loop (que además deja la versión anterior sirviendo y hace parecer que
+// el despliegue "no llegó").
+for (const [name, initialize] of [
+  ["notifications", initializeNotifications],
+  ["payments", initializePayments],
+] as const) {
+  try {
+    await initialize();
+  } catch (error) {
+    console.error(`[startup] No se pudo inicializar '${name}':`, error instanceof Error ? error.message : error);
+  }
+}
 
 const app = new Hono();
 
@@ -1464,18 +1478,25 @@ app.all("*", async (context) => {
       }
 
       const email = req.headers.get("x-customer-email")?.trim().toLowerCase() || null;
-      if (req.method === "GET" && !paymentMethodMatch[1]) {
-        return jsonResponse({ data: await listPaymentMethods(stripeClient, identity.userId, email) }, { origin });
-      }
-      if (req.method === "POST" && !paymentMethodMatch[1]) {
-        return jsonResponse({ data: await createSetupIntent(stripeClient, identity.userId, email) }, { status: 201, origin });
-      }
-      if (req.method === "DELETE" && paymentMethodMatch[1]) {
-        const result = await detachPaymentMethod(stripeClient, identity.userId, decodeURIComponent(paymentMethodMatch[1]));
-        if (!result.detached) {
-          return errorResponse("NOT_FOUND", "Ese método de pago no pertenece a tu cuenta.", { status: 404, origin });
+      try {
+        if (req.method === "GET" && !paymentMethodMatch[1]) {
+          return jsonResponse({ data: await listPaymentMethods(stripeClient, identity.userId, email) }, { origin });
         }
-        return jsonResponse({ ok: true }, { origin });
+        if (req.method === "POST" && !paymentMethodMatch[1]) {
+          return jsonResponse({ data: await createSetupIntent(stripeClient, identity.userId, email) }, { status: 201, origin });
+        }
+        if (req.method === "DELETE" && paymentMethodMatch[1]) {
+          const result = await detachPaymentMethod(stripeClient, identity.userId, decodeURIComponent(paymentMethodMatch[1]));
+          if (!result.detached) {
+            return errorResponse("NOT_FOUND", "Ese método de pago no pertenece a tu cuenta.", { status: 404, origin });
+          }
+          return jsonResponse({ ok: true }, { origin });
+        }
+      } catch (error) {
+        if (error instanceof PaymentsUnavailableError) {
+          return errorResponse("SERVICE_UNAVAILABLE", error.message, { status: 503, origin });
+        }
+        throw error;
       }
     }
 

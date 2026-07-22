@@ -38,12 +38,13 @@ jobs:
       - name: Install Railway CLI
         run: npm install --global @railway/cli
 
-      # El commit viaja dentro del código subido. Así /version puede decir qué
-      # versión está corriendo sin depender de variables de Railway.
+      # El commit viaja dentro del código subido. Va en src/ porque el Dockerfile
+      # del API solo hace `COPY src/ ./src/`: un archivo en la raíz del servicio
+      # no llegaría a la imagen.
       - name: Stamp the commit being deployed
         env:
           DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: echo "$DEPLOY_SHA" > parciales/Parcial2/bun-api/COMMIT
+        run: echo "$DEPLOY_SHA" > parciales/Parcial2/bun-api/src/COMMIT
 
       - name: Deploy all services to Railway staging
         env:
