@@ -136,6 +136,46 @@ describe("MongoDB repository", () => {
     expect((await repository.listOrders()).filter((order) => order.checkoutSessionId === "cs_event_race")).toHaveLength(1);
   });
 
+  test("only one refund claim can own an order", async () => {
+    const checkoutSessionId = `cs_refund_claim_${Date.now()}`;
+    await repository.updateInventory({ sku: "kit-balcon-basico", stock: 1, minimumStock: 0 });
+    await repository.upsertOrderFromCheckout({
+      checkoutSessionId,
+      productId: "kit-balcon-basico",
+      buyerId: "buyer-refund",
+      status: "paid",
+      amountUsd: 24.9,
+      quantity: 1,
+    });
+    const order = (await repository.listOrders()).find((row) => row.checkoutSessionId === checkoutSessionId);
+    expect(order).toBeDefined();
+
+    const firstClaim = {
+      amountUsd: 10,
+      reason: "Solicitud original",
+      idempotencyKey: `refund-${order!.id}`,
+      createdAt: new Date().toISOString(),
+    };
+    const results = await Promise.all([
+      repository.claimOrderRefund(order!.id, firstClaim),
+      repository.claimOrderRefund(order!.id, firstClaim),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    await repository.releaseOrderRefundClaim(order!.id, firstClaim.idempotencyKey);
+
+    const staleClaim = {
+      ...firstClaim,
+      idempotencyKey: `${firstClaim.idempotencyKey}-stale`,
+      createdAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    };
+    expect(await repository.claimOrderRefund(order!.id, staleClaim)).toBe(true);
+    expect(await repository.claimOrderRefund(order!.id, {
+      ...firstClaim,
+      idempotencyKey: `${firstClaim.idempotencyKey}-recovery`,
+    })).toBe(true);
+  });
+
   test("cancelling a checkout releases every pending line atomically", async () => {
     const firstProduct = "kit-balcon-basico";
     const secondProduct = "kit-microverde-rapido";

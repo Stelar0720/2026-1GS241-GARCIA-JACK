@@ -38,9 +38,9 @@ Basado en el PRD, el plan de ejecución y la estrategia de agentes/habilidades.
 
 ## Cierre por fase
 
-1. [ ] Ejecutar lint, build y e2e al cerrar cada bloque funcional.
-2. [ ] Ejecutar code-review de cambios críticos (roles, seguridad, pagos).
-3. [ ] Actualizar PRD/plan si cambia alcance o prioridades.
+1. [x] Ejecutar lint, build y e2e al cerrar cada bloque funcional.
+2. [x] Ejecutar code-review de cambios críticos (roles, seguridad, pagos).
+3. [x] Actualizar la trazabilidad de cierre con HU-069 y separar el backlog posterior.
 
 ## Agentes y habilidades sugeridas
 

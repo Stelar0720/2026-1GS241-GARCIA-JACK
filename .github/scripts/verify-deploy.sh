@@ -38,8 +38,6 @@ for attempt in $(seq 1 40); do
   # verificación más débil, pero real — y mejor que bloquear un deploy que sí salió.
   if [[ "$status" == "200" && "$deployed" == "desconocido" ]]; then
     echo "::warning::${env_name} sirve código nuevo pero no reporta su commit. Falta APP_COMMIT o RAILWAY_GIT_COMMIT_SHA en el servicio."
-    ok=true
-    break
   fi
 
   echo "  intento ${attempt}: /version -> ${status}, commit '${deployed:-sin respuesta}', esperado '${expected:0:7}'"

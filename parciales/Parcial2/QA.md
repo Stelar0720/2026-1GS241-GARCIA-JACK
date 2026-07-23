@@ -20,6 +20,7 @@ El entorno de pruebas **no** tiene llaves de Stripe ni token de GitHub, a propó
 |---|---|---|
 | Reembolsos (HU-030) | — | 401 sin key, 403 sin `orders:refund`, 404 si la orden no existe, 400 si el monto es inválido |
 | Tarjetas guardadas (HU-032) | Stripe | 401 sin sesión, 503 `SERVICE_UNAVAILABLE` con sesión válida |
+| Cierre seguro (HU-069) | Stripe + MongoDB | reclamo atómico e idempotente de reembolso, Payment Element real y paridad ES/EN |
 | Pipelines (HU-046/047) | GitHub | 401 sin key, 403 sin el permiso propio, 503 con la key de CI |
 | Facturas (HU-033) | — | 401 sin sesión, 404 si la orden no existe, 409 si no está pagada |
 

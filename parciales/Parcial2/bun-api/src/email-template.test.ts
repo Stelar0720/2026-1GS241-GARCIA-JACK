@@ -3,11 +3,22 @@ import { escapeHtml, renderOrderEmail } from "./email-template";
 
 describe("template de emails transaccionales (HU-055)", () => {
   test("usa un asunto distinto por estado de la orden", () => {
-    const subjects = (["pending", "paid", "cancelled", "refunded"] as const).map(
+    const subjects = (["pending", "paid", "cancelled", "refunded", "partially_refunded"] as const).map(
       (status) => renderOrderEmail({ status, orderId: "o-1", productName: "Kit", amountUsd: 10 }).subject,
     );
-    expect(new Set(subjects).size).toBe(4);
+    expect(new Set(subjects).size).toBe(5);
     expect(renderOrderEmail({ status: "paid", orderId: "o-1", productName: "Kit", amountUsd: 10 }).subject).toContain("Pago confirmado");
+  });
+
+  test("distingue un reembolso parcial de uno total", () => {
+    const { subject, html } = renderOrderEmail({
+      status: "partially_refunded",
+      orderId: "o-parcial",
+      productName: "Kit",
+      amountUsd: 5,
+    });
+    expect(subject).toContain("parcial");
+    expect(html).toContain("Reembolso parcial");
   });
 
   test("incluye pedido, producto y total formateado", () => {
