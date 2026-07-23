@@ -57,6 +57,15 @@ export function getClerkPublishableKey() {
   );
 }
 
+export function getStripePublishableKey() {
+  return (
+    getEnvAny([
+      "VITE_STRIPE_PUBLISHABLE_KEY",
+      "REACT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+    ]) ?? ""
+  );
+}
+
 export function getAdminAppUrl() {
   return normalizeUrl(
     getEnvAny(["VITE_ADMIN_APP_URL", "REACT_PUBLIC_ADMIN_APP_URL", "NEXT_PUBLIC_ADMIN_APP_URL"]),

@@ -10,7 +10,17 @@ export let db: Db;
 
 export type OrderStatus = "pending" | "paid" | "cancelled" | "refunded";
 export type PendingOrder = { checkoutSessionId: string; productId: string; buyerId: string; amountUsd: number; quantity: number };
-export type ProductInput = { name: string; description: string; priceUsd: number; tag: string; category?: string; tags?: string[]; imageUrl: string };
+export type ProductDetails = {
+  level: string;
+  light: string;
+  space: string;
+  harvest: string;
+  cycles: string;
+  includes: string[];
+  steps: { title: string; text: string }[];
+  testimonial: { name: string; text: string };
+};
+export type ProductInput = { name: string; description: string; priceUsd: number; tag: string; category?: string; tags?: string[]; imageUrl: string; details?: ProductDetails | null };
 export type ProductRecord = ProductInput & { id: string; active: number; stock: number; minimumStock: number; inventoryUpdatedAt: string | null; createdAt: string; updatedAt: string };
 export type AuditLogEntry = { id: string; timestamp: string; actor: string; action: string; resource: string; details: string };
 export type AdminUserRole = "support" | "admin";
@@ -23,7 +33,8 @@ export type SalesReport = {
   byProduct: { productId: string; productName: string | null; unitsSold: number; revenueUsd: number }[];
 };
 
-type OrderDocument = { id: string; checkoutSessionId: string; productId: string; buyerId: string; buyerEmail: string | null; status: OrderStatus; quantity: number; amountUsd: number; createdAt: string; updatedAt: string; refund?: OrderRefund | null };
+type RefundClaim = { amountUsd: number; reason: string; idempotencyKey: string; createdAt: string };
+type OrderDocument = { id: string; checkoutSessionId: string; productId: string; buyerId: string; buyerEmail: string | null; status: OrderStatus; quantity: number; amountUsd: number; createdAt: string; updatedAt: string; refund?: OrderRefund | null; refundClaim?: RefundClaim | null };
 export type OrderRefund = { refundId: string; amountUsd: number; reason: string; createdAt: string };
 type InventoryDocument = { sku: string; stock: number; minimumStock: number; updatedAt: string };
 export type StockAlert = InventoryDocument & { type: "low_stock"; deficit: number };
@@ -120,20 +131,47 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus) {
     await orders.updateOne({ id: orderId }, { $set: { status, updatedAt: new Date().toISOString() } }, { session });
   }));
 }
-// Registra un reembolso (HU-030). Un reembolso total pasa la orden a 'refunded' y
-// libera el stock reservado; uno parcial la deja en 'paid' con el monto anotado.
-// ponytail: un solo reembolso por orden; si hiciera falta acumular varios, cambiar
-// `refund` por un arreglo y sumar los montos antes de decidir el estado.
+export async function claimOrderRefund(orderId: string, claim: RefundClaim) {
+  await ready();
+  const expiredBefore = new Date(Date.now() - 5 * 60_000).toISOString();
+  const result = await orders.updateOne(
+    {
+      id: orderId,
+      status: "paid",
+      refund: { $in: [null, undefined] },
+      $or: [
+        { refundClaim: { $in: [null, undefined] } },
+        { "refundClaim.createdAt": { $lt: expiredBefore } },
+      ],
+    },
+    { $set: { refundClaim: claim, updatedAt: new Date().toISOString() } },
+  );
+  return result.matchedCount === 1;
+}
+
+export async function releaseOrderRefundClaim(orderId: string, idempotencyKey: string) {
+  await ready();
+  await orders.updateOne(
+    { id: orderId, "refundClaim.idempotencyKey": idempotencyKey, refund: { $in: [null, undefined] } },
+    { $unset: { refundClaim: "" }, $set: { updatedAt: new Date().toISOString() } },
+  );
+}
+
+// Registra el único reembolso permitido por orden. Un reembolso total pasa la
+// orden a 'refunded'; uno parcial queda 'paid' pero no admite otra devolución.
 export async function markOrderRefunded(orderId: string, refund: OrderRefund) {
   await ready();
   return client.withSession(async (session) => session.withTransaction(async () => {
     const previous = await orders.findOne({ id: orderId }, { session });
-    if (!previous) return null;
+    if (!previous || previous.refund) return null;
     const total = refund.amountUsd >= previous.amountUsd;
     if (total) await reconcileReservedInventory(previous, { ...previous, status: "refunded" }, session);
     await orders.updateOne(
       { id: orderId },
-      { $set: { ...(total ? { status: "refunded" as OrderStatus } : {}), refund, updatedAt: new Date().toISOString() } },
+      {
+        $set: { ...(total ? { status: "refunded" as OrderStatus } : {}), refund, updatedAt: new Date().toISOString() },
+        $unset: { refundClaim: "" },
+      },
       { session },
     );
     return orders.findOne({ id: orderId }, { projection: { _id: 0 }, session });
@@ -192,7 +230,18 @@ export async function listProducts(options: { includeInactive?: boolean; categor
 export async function listTaxonomy() { await ready(); const rows = await products.find({ active: 1 }, { projection: { category: 1, tag: 1, tags: 1 } }).toArray(); return { categories: [...new Set(rows.map((row) => row.category).filter((item): item is string => Boolean(item)))].sort(), tags: [...new Set(rows.flatMap((row) => [row.tag, ...(row.tags ?? [])]).filter((item): item is string => Boolean(item)))].sort() }; }
 export async function getActiveProduct(productId: string) { await ready(); return hydrateProduct(await products.findOne({ id: productId, active: 1 })); }
 export async function createProduct(params: ProductInput) { await ready(); const now = new Date().toISOString(); const product = { ...params, id: makeProductId(params.name), active: 1, createdAt: now, updatedAt: now }; await products.insertOne(product); await createInventoryIfMissing(product.id); return hydrateProduct(product); }
-export async function updateProduct(productId: string, params: ProductInput) { await ready(); await products.updateOne({ id: productId }, { $set: { ...params, updatedAt: new Date().toISOString() } }); return hydrateProduct(await products.findOne({ id: productId })); }
+export async function updateProduct(productId: string, params: ProductInput) {
+  await ready();
+  const { details, ...fields } = params;
+  await products.updateOne(
+    { id: productId },
+    {
+      $set: { ...fields, ...(details ? { details } : {}), updatedAt: new Date().toISOString() },
+      ...(details === null ? { $unset: { details: "" } } : {}),
+    },
+  );
+  return hydrateProduct(await products.findOne({ id: productId }));
+}
 export async function deleteProduct(productId: string) { await ready(); return (await products.deleteOne({ id: productId })).deletedCount > 0; }
 
 export async function getCoupon(code: string) { await ready(); return coupons.findOne({ code: code.trim().toUpperCase() }, { projection: { _id: 0 } }); }

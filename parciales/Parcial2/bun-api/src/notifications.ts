@@ -10,8 +10,8 @@
 
 import { randomUUID } from "node:crypto";
 import type { Collection, Filter } from "mongodb";
-import { db, dbReady, type OrderStatus } from "./db";
-import { renderOrderEmail } from "./email-template";
+import { db, dbReady } from "./db";
+import { renderOrderEmail, type OrderEmailStatus } from "./email-template";
 import { writeLog } from "./observability";
 
 export type EmailStatus = "queued" | "sent" | "failed" | "skipped";
@@ -62,7 +62,7 @@ async function deliver(message: { to: string; subject: string; html: string }): 
 
 export async function sendOrderStatusEmail(input: {
   to: string | null;
-  status: OrderStatus;
+  status: OrderEmailStatus;
   orderId: string;
   productName?: string | null;
   amountUsd: number;

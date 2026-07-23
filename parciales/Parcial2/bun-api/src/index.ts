@@ -6,6 +6,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import {
   cancelPendingCheckoutOrders,
+  claimOrderRefund,
   addWishlistItem,
   createProduct,
   deleteCoupon,
@@ -24,6 +25,7 @@ import {
   listWishlist,
   listStockAlerts,
   markOrderRefunded,
+  releaseOrderRefundClaim,
   searchAdminUsers,
   listOrders,
   listOrdersByBuyer,
@@ -412,11 +414,26 @@ async function refundOrderWithStripe(
   if (order.status !== "paid") {
     throw new Error(`Solo se reembolsan órdenes pagadas. Estado actual: '${order.status}'.`);
   }
+  if (order.refund) {
+    throw new Error("Esta orden ya tiene un reembolso registrado.");
+  }
   const amountUsd = Number((input.amountUsd ?? order.amountUsd).toFixed(2));
   if (amountUsd > order.amountUsd) {
     throw new Error(`El monto a reembolsar (${amountUsd}) supera el total de la orden (${order.amountUsd}).`);
   }
 
+  const idempotencyKey = `urbansprout-order-${order.id}-refund`;
+  const claimed = await claimOrderRefund(order.id, {
+    amountUsd,
+    reason: input.reason,
+    idempotencyKey,
+    createdAt: new Date().toISOString(),
+  });
+  if (!claimed) {
+    throw new Error("La orden ya tiene otro reembolso registrado o en proceso.");
+  }
+
+  try {
   const stripeSessionId = order.checkoutSessionId.split(":")[0];
   const session = await stripeClient.checkout.sessions.retrieve(stripeSessionId);
   const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
@@ -426,14 +443,18 @@ async function refundOrderWithStripe(
     payment_intent: paymentIntentId,
     amount: Math.round(amountUsd * 100),
     metadata: { orderId: order.id, reason: input.reason },
-  });
+  }, { idempotencyKey });
 
-  return markOrderRefunded(order.id, {
+  return await markOrderRefunded(order.id, {
     refundId: refund.id,
     amountUsd,
     reason: input.reason,
     createdAt: new Date().toISOString(),
   });
+  } catch (error) {
+    await releaseOrderRefundClaim(order.id, idempotencyKey);
+    throw error;
+  }
 }
 
 await dbReady;
@@ -1439,6 +1460,23 @@ app.all("*", async (context) => {
       const orderId = decodeURIComponent(refundMatch[1]);
       const order = await getOrderById(orderId);
       if (!order) return errorResponse("NOT_FOUND", "Orden no encontrada.", { status: 404, origin });
+      if (order.refund) {
+        await Promise.all([
+          recordAuditLog({
+            actor: auth.role,
+            action: "order.refund.reconcile",
+            resource: orderId,
+            details: JSON.stringify({ refundId: order.refund.refundId, idempotent: true }),
+          }).catch((error) => console.error("[refund] No se pudo reconciliar auditoría:", error)),
+          sendOrderStatusEmail({
+            to: order.buyerEmail,
+            status: order.status === "refunded" ? "refunded" : "partially_refunded",
+            orderId,
+            amountUsd: order.refund.amountUsd,
+          }).catch((error) => console.error("[refund] No se pudo reconciliar notificación:", error)),
+        ]);
+        return jsonResponse({ ok: true, idempotent: true, order }, { origin });
+      }
 
       let refunded: Awaited<ReturnType<typeof markOrderRefunded>>;
       try {
@@ -1454,10 +1492,10 @@ app.all("*", async (context) => {
         action: "order.refund",
         resource: orderId,
         details: JSON.stringify({ amountUsd: parsed.data.amountUsd ?? order.amountUsd, reason: parsed.data.reason }),
-      });
+      }).catch((error) => console.error("[refund] No se pudo registrar auditoría:", error));
       await sendOrderStatusEmail({
         to: order.buyerEmail,
-        status: "refunded",
+        status: refunded?.status === "refunded" ? "refunded" : "partially_refunded",
         orderId,
         amountUsd: parsed.data.amountUsd ?? order.amountUsd,
       }).catch(() => undefined);

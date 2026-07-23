@@ -31,7 +31,19 @@ type Product = {
   description: string;
   priceUsd: number;
   tag: string;
+  category?: string;
+  tags?: string[];
   imageUrl: string;
+  details?: {
+    level: string;
+    light: string;
+    space: string;
+    harvest: string;
+    cycles: string;
+    includes: string[];
+    steps: { title: string; text: string }[];
+    testimonial: { name: string; text: string };
+  };
   active: number;
   stock: number;
   minimumStock: number;
@@ -45,9 +57,20 @@ type ProductFormData = {
   description: string;
   priceUsd: string;
   tag: string;
+  category: string;
+  tags: string;
   imageUrl: string;
   stock: string;
   minimumStock: string;
+  level: string;
+  light: string;
+  space: string;
+  harvest: string;
+  cycles: string;
+  includes: string;
+  steps: string;
+  testimonialName: string;
+  testimonialText: string;
 };
 
 type StockAlert = { sku: string; stock: number; minimumStock: number; deficit: number };
@@ -109,9 +132,20 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
     description: "",
     priceUsd: "",
     tag: "",
+    category: "",
+    tags: "",
     imageUrl: "",
     stock: "0",
     minimumStock: "0",
+    level: "",
+    light: "",
+    space: "",
+    harvest: "",
+    cycles: "",
+    includes: "",
+    steps: "",
+    testimonialName: "",
+    testimonialText: "",
   });
   const [touchedProductFields, setTouchedProductFields] = useState<Partial<Record<ProductField, boolean>>>({});
   const productErrors = validateProduct(productFormData);
@@ -255,9 +289,20 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       description: "",
       priceUsd: "",
       tag: "",
+      category: "",
+      tags: "",
       imageUrl: "",
       stock: "0",
       minimumStock: "0",
+      level: "",
+      light: "",
+      space: "",
+      harvest: "",
+      cycles: "",
+      includes: "",
+      steps: "",
+      testimonialName: "",
+      testimonialText: "",
     });
     setShowProductForm(true);
   }
@@ -270,9 +315,20 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       description: product.description,
       priceUsd: product.priceUsd.toString(),
       tag: product.tag,
+      category: product.category ?? "",
+      tags: (product.tags ?? []).join(", "),
       imageUrl: product.imageUrl,
       stock: product.stock.toString(),
       minimumStock: product.minimumStock.toString(),
+      level: product.details?.level ?? "",
+      light: product.details?.light ?? "",
+      space: product.details?.space ?? "",
+      harvest: product.details?.harvest ?? "",
+      cycles: product.details?.cycles ?? "",
+      includes: (product.details?.includes ?? []).join("\n"),
+      steps: (product.details?.steps ?? []).map((step) => `${step.title} | ${step.text}`).join("\n"),
+      testimonialName: product.details?.testimonial.name ?? "",
+      testimonialText: product.details?.testimonial.text ?? "",
     });
     setShowProductForm(true);
   }
@@ -286,9 +342,20 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
       description: "",
       priceUsd: "",
       tag: "",
+      category: "",
+      tags: "",
       imageUrl: "",
       stock: "0",
       minimumStock: "0",
+      level: "",
+      light: "",
+      space: "",
+      harvest: "",
+      cycles: "",
+      includes: "",
+      steps: "",
+      testimonialName: "",
+      testimonialText: "",
     });
   }
 
@@ -326,6 +393,20 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
     setSavingProduct(editingProduct?.id ?? "new");
 
     try {
+      const includes = productFormData.includes.split("\n").map((item) => item.trim()).filter(Boolean);
+      const steps = productFormData.steps.split("\n").map((line) => {
+        const [title, ...textParts] = line.split("|");
+        return { title: title.trim(), text: textParts.join("|").trim() };
+      }).filter((step) => step.title && step.text);
+      const hasDetails = [
+        productFormData.level,
+        productFormData.light,
+        productFormData.space,
+        productFormData.harvest,
+        productFormData.cycles,
+        productFormData.testimonialName,
+        productFormData.testimonialText,
+      ].some((value) => value.trim()) || includes.length > 0 || steps.length > 0;
       const url = editingProduct
         ? `${apiBaseUrl}/products/${editingProduct.id}`
         : `${apiBaseUrl}/products`;
@@ -339,7 +420,22 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
           description: productFormData.description.trim(),
           priceUsd: price,
           tag: productFormData.tag.trim(),
+          category: productFormData.category.trim(),
+          tags: productFormData.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
           imageUrl: productFormData.imageUrl.trim(),
+          details: hasDetails ? {
+            level: productFormData.level.trim(),
+            light: productFormData.light.trim(),
+            space: productFormData.space.trim(),
+            harvest: productFormData.harvest.trim(),
+            cycles: productFormData.cycles.trim(),
+            includes,
+            steps,
+            testimonial: {
+              name: productFormData.testimonialName.trim(),
+              text: productFormData.testimonialText.trim(),
+            },
+          } : null,
         }),
       });
 
@@ -741,6 +837,21 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
 
             <div className="form-row">
               <div className="form-group">
+                <label htmlFor="product-category">Categoría</label>
+                <input id="product-category" type="text" value={productFormData.category}
+                  onChange={(e) => setProductFormData({ ...productFormData, category: e.target.value })}
+                  placeholder="Ej.: Hortalizas" />
+              </div>
+              <div className="form-group">
+                <label htmlFor="product-tags">Etiquetas de catálogo</label>
+                <input id="product-tags" type="text" value={productFormData.tags}
+                  onChange={(e) => setProductFormData({ ...productFormData, tags: e.target.value })}
+                  placeholder="Principiantes, Balcón, Interior" />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
                 <label htmlFor="product-stock">Stock disponible</label>
                 <input
                   id="product-stock"
@@ -792,6 +903,79 @@ function App({ clerkEnabled }: { clerkEnabled: boolean }) {
               />
               {uploadingProductImage ? <p className="form-help">Cargando imagen...</p> : null}
             </div>
+
+            <fieldset className="product-content-fields">
+              <legend>Contenido de la página de producto</legend>
+              <p className="form-help">Estos textos aparecen en la ficha detallada del storefront.</p>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="product-level">Nivel</label>
+                  <input id="product-level" value={productFormData.level}
+                    onChange={(e) => setProductFormData({ ...productFormData, level: e.target.value })}
+                    placeholder="Principiante" />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="product-light">Luz necesaria</label>
+                  <input id="product-light" value={productFormData.light}
+                    onChange={(e) => setProductFormData({ ...productFormData, light: e.target.value })}
+                    placeholder="2–3 h de luz directa" />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="product-space">Espacio mínimo</label>
+                  <input id="product-space" value={productFormData.space}
+                    onChange={(e) => setProductFormData({ ...productFormData, space: e.target.value })}
+                    placeholder="Desde 40×40 cm" />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="product-harvest">Primera cosecha</label>
+                  <input id="product-harvest" value={productFormData.harvest}
+                    onChange={(e) => setProductFormData({ ...productFormData, harvest: e.target.value })}
+                    placeholder="21–30 días" />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="product-cycles">Rendimiento</label>
+                <input id="product-cycles" value={productFormData.cycles}
+                  onChange={(e) => setProductFormData({ ...productFormData, cycles: e.target.value })}
+                  placeholder="2–3 ciclos por kit" />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="product-includes">Qué incluye la caja</label>
+                <textarea id="product-includes" rows={6} value={productFormData.includes}
+                  onChange={(e) => setProductFormData({ ...productFormData, includes: e.target.value })}
+                  placeholder={"Un elemento por línea\nSemillas seleccionadas\nMacetas de cultivo\nGuía impresa"} />
+                <p className="form-help">Escribe un elemento por línea.</p>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="product-steps">Así se cultiva</label>
+                <textarea id="product-steps" rows={7} value={productFormData.steps}
+                  onChange={(e) => setProductFormData({ ...productFormData, steps: e.target.value })}
+                  placeholder={"Un paso por línea con formato Título | Explicación\nPrepara las macetas | Llena cada maceta con sustrato.\nSiembra | Sigue la profundidad de la guía."} />
+                <p className="form-help">Formato: título del paso, barra vertical y explicación.</p>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="product-testimonial-name">Nombre del testimonio</label>
+                  <input id="product-testimonial-name" value={productFormData.testimonialName}
+                    onChange={(e) => setProductFormData({ ...productFormData, testimonialName: e.target.value })}
+                    placeholder="Carla M., Bella Vista" />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="product-testimonial-text">Texto del testimonio</label>
+                  <textarea id="product-testimonial-text" rows={3} value={productFormData.testimonialText}
+                    onChange={(e) => setProductFormData({ ...productFormData, testimonialText: e.target.value })}
+                    placeholder="Mi balcón ahora produce..." />
+                </div>
+              </div>
+            </fieldset>
 
             <div className="form-group">
               <label htmlFor="product-image">URL de imagen</label>

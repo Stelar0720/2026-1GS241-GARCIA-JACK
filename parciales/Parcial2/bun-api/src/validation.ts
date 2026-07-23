@@ -10,6 +10,23 @@ export function sanitizeText(value: string): string {
 export const safeText = (max: number, min = 0) => z.string().transform(sanitizeText).pipe(z.string().min(min).max(max));
 export const safeId = z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/);
 
+const productDetailsSchema = z.object({
+  level: safeText(80).default(""),
+  light: safeText(160).default(""),
+  space: safeText(160).default(""),
+  harvest: safeText(160).default(""),
+  cycles: safeText(160).default(""),
+  includes: z.array(safeText(300, 1)).max(20).default([]),
+  steps: z.array(z.object({
+    title: safeText(120, 1),
+    text: safeText(500, 1),
+  }).strict()).max(12).default([]),
+  testimonial: z.object({
+    name: safeText(120).default(""),
+    text: safeText(1_000).default(""),
+  }).strict().default({ name: "", text: "" }),
+}).strict();
+
 export const productInputSchema = z.object({
   name: safeText(120, 1),
   description: safeText(2_000, 1),
@@ -18,6 +35,7 @@ export const productInputSchema = z.object({
   category: safeText(80).default(""),
   tags: z.array(safeText(40, 1)).max(10).default([]),
   imageUrl: z.union([z.literal(""), z.url().max(2_048)]).default(""),
+  details: productDetailsSchema.nullable().optional(),
 }).strict();
 
 export const couponValidationSchema = z.object({

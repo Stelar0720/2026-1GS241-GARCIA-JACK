@@ -5,7 +5,9 @@
 
 import type { OrderStatus } from "./db";
 
-const STATUS_COPY: Record<OrderStatus, { subject: string; headline: string; body: string }> = {
+export type OrderEmailStatus = OrderStatus | "partially_refunded";
+
+const STATUS_COPY: Record<OrderEmailStatus, { subject: string; headline: string; body: string }> = {
   pending: {
     subject: "Recibimos tu pedido en UrbanSprout",
     headline: "Tu pedido está en camino de confirmarse",
@@ -26,6 +28,11 @@ const STATUS_COPY: Record<OrderStatus, { subject: string; headline: string; body
     headline: "Reembolso procesado",
     body: "El reembolso ya fue enviado a tu medio de pago. Suele acreditarse en 5 a 10 días hábiles.",
   },
+  partially_refunded: {
+    subject: "Procesamos un reembolso parcial de tu pedido UrbanSprout",
+    headline: "Reembolso parcial procesado",
+    body: "La devolución parcial ya fue enviada a tu medio de pago. El resto de tu pedido conserva su estado pagado.",
+  },
 };
 
 export function escapeHtml(value: string) {
@@ -37,7 +44,7 @@ export function escapeHtml(value: string) {
 // Tabla centrada con ancho máximo y tipografía de sistema: es lo único que
 // renderiza igual en Gmail, Outlook y clientes móviles.
 export function renderOrderEmail(input: {
-  status: OrderStatus;
+  status: OrderEmailStatus;
   orderId: string;
   productName: string | null;
   amountUsd: number;

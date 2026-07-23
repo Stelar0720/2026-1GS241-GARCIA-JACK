@@ -34,13 +34,27 @@ export async function resolveStripeCustomerId(stripe: Stripe, userId: string, em
     ...(email ? { email } : {}),
     metadata: { clerkUserId: userId },
   });
-  await links.insertOne({
-    userId,
-    customerId: customer.id,
-    email: email?.trim().toLowerCase() || null,
-    createdAt: new Date().toISOString(),
-  });
-  return customer.id;
+  try {
+    await links.insertOne({
+      userId,
+      customerId: customer.id,
+      email: email?.trim().toLowerCase() || null,
+      createdAt: new Date().toISOString(),
+    });
+    return customer.id;
+  } catch (error) {
+    const duplicateKey = typeof error === "object" && error !== null && "code" in error && error.code === 11000;
+    if (!duplicateKey) throw error;
+
+    // Otra petición ganó la carrera. Reutilizamos su vínculo y eliminamos el
+    // customer huérfano que acabamos de crear.
+    const winner = await links.findOne({ userId });
+    await stripe.customers.del(customer.id).catch((cleanupError) => {
+      console.error(`[payments] No se pudo eliminar el customer huérfano ${customer.id}:`, cleanupError);
+    });
+    if (winner) return winner.customerId;
+    throw error;
+  }
 }
 
 export type SavedPaymentMethod = {

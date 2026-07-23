@@ -44,6 +44,16 @@ describe("MongoDB repository", () => {
       priceUsd: 12.5,
       tag: "QA",
       imageUrl: "",
+      details: {
+        level: "Principiante",
+        light: "Luz indirecta",
+        space: "30×30 cm",
+        harvest: "10 días",
+        cycles: "3 ciclos",
+        includes: ["Semillas", "Maceta"],
+        steps: [{ title: "Sembrar", text: "Coloca las semillas." }],
+        testimonial: { name: "Cliente QA", text: "Funcionó muy bien." },
+      },
     });
 
     expect(created?.active).toBe(1);
@@ -55,8 +65,20 @@ describe("MongoDB repository", () => {
       priceUsd: 13.5,
       tag: "QA",
       imageUrl: "",
+      details: created!.details,
     });
     expect(updated?.name).toBe("Producto de prueba actualizado");
+    expect(updated?.details?.includes).toEqual(["Semillas", "Maceta"]);
+
+    const cleared = await repository.updateProduct(created!.id, {
+      name: "Producto de prueba actualizado",
+      description: "Registro aislado y temporal",
+      priceUsd: 13.5,
+      tag: "QA",
+      imageUrl: "",
+      details: null,
+    });
+    expect(cleared?.details).toBeUndefined();
 
     expect(await repository.deleteProduct(created!.id)).toBe(true);
     expect(await repository.getActiveProduct(created!.id)).toBeNull();
@@ -134,6 +156,46 @@ describe("MongoDB repository", () => {
     expect(results.sort()).toEqual([false, true]);
     expect(await repository.getInventoryStock(productId)).toBe(0);
     expect((await repository.listOrders()).filter((order) => order.checkoutSessionId === "cs_event_race")).toHaveLength(1);
+  });
+
+  test("only one refund claim can own an order", async () => {
+    const checkoutSessionId = `cs_refund_claim_${Date.now()}`;
+    await repository.updateInventory({ sku: "kit-balcon-basico", stock: 1, minimumStock: 0 });
+    await repository.upsertOrderFromCheckout({
+      checkoutSessionId,
+      productId: "kit-balcon-basico",
+      buyerId: "buyer-refund",
+      status: "paid",
+      amountUsd: 24.9,
+      quantity: 1,
+    });
+    const order = (await repository.listOrders()).find((row) => row.checkoutSessionId === checkoutSessionId);
+    expect(order).toBeDefined();
+
+    const firstClaim = {
+      amountUsd: 10,
+      reason: "Solicitud original",
+      idempotencyKey: `refund-${order!.id}`,
+      createdAt: new Date().toISOString(),
+    };
+    const results = await Promise.all([
+      repository.claimOrderRefund(order!.id, firstClaim),
+      repository.claimOrderRefund(order!.id, firstClaim),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    await repository.releaseOrderRefundClaim(order!.id, firstClaim.idempotencyKey);
+
+    const staleClaim = {
+      ...firstClaim,
+      idempotencyKey: `${firstClaim.idempotencyKey}-stale`,
+      createdAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    };
+    expect(await repository.claimOrderRefund(order!.id, staleClaim)).toBe(true);
+    expect(await repository.claimOrderRefund(order!.id, {
+      ...firstClaim,
+      idempotencyKey: `${firstClaim.idempotencyKey}-recovery`,
+    })).toBe(true);
   });
 
   test("cancelling a checkout releases every pending line atomically", async () => {
