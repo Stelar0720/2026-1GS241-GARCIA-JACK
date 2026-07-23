@@ -69,7 +69,10 @@ jobs:
           # El API va SIN --detach: es el servicio cuya versión verificamos
           # después, así que su build tiene que fallar acá y no diez minutos más
           # tarde en forma de "sigue sirviendo la versión vieja".
-          railway up ./parciales/Parcial2/bun-api --path-as-root --yes \
+          # El servicio API conserva como Root Directory
+          # /parciales/Parcial2/bun-api. Por eso se sube el snapshot completo
+          # del repositorio; subir solo bun-api duplicaría esa ruta en Railpack.
+          railway up . --path-as-root --yes \
             --project "$project" --environment staging --service urbansprout-api \
             --message "staging ${DEPLOY_SHA}"
 
