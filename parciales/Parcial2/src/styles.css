@@ -304,6 +304,7 @@ a {
   border-radius: var(--radius);
   background: var(--surface-solid);
   backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   padding: 1.1rem;
 }
 
