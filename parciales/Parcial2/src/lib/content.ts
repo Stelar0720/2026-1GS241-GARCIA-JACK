@@ -234,7 +234,7 @@ const PRODUCT_EXTRAS: Record<string, ProductExtra> = {
 
 export function getProductExtra(product: Product): ProductExtra {
   return (
-    PRODUCT_EXTRAS[product.id] ?? {
+    product.details ?? PRODUCT_EXTRAS[product.id] ?? {
       level: "Principiante",
       light: "Luz indirecta a moderada",
       space: "Desde 30×30 cm",

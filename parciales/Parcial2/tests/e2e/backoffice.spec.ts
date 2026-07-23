@@ -28,6 +28,10 @@ test.describe("Backoffice admin", () => {
 
     await page.getByRole("button", { name: "+ Nuevo producto" }).click();
     await expect(page.getByRole("heading", { name: "Nuevo producto" })).toBeVisible();
+    await expect(page.getByLabel("Qué incluye la caja")).toBeVisible();
+    await expect(page.getByLabel("Así se cultiva")).toBeVisible();
+    await expect(page.getByLabel("Luz necesaria")).toBeVisible();
+    await expect(page.getByLabel("Texto del testimonio")).toBeVisible();
 
     // El precio inválido se reporta al perder el foco y bloquea el submit.
     await page.getByLabel("Nombre del producto *").fill("Kit sin precio");
@@ -53,6 +57,10 @@ test.describe("Backoffice admin", () => {
     await page.getByLabel("Descripción *").fill("Creado por Playwright E2E");
     await page.getByLabel("Precio (USD) *").fill("21.5");
     await page.getByLabel("Stock disponible").fill("7");
+    await page.getByLabel("Categoría").fill("E2E");
+    await page.getByLabel("Qué incluye la caja").fill("Semillas E2E\nMaceta E2E");
+    await page.getByLabel("Así se cultiva").fill("Preparar | Abre la caja\nSembrar | Coloca las semillas");
+    await page.getByLabel("Nivel").fill("Principiante");
     await page.getByRole("button", { name: "Guardar producto" }).click();
 
     // Aparece en la lista.

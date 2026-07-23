@@ -8,6 +8,16 @@ export type Product = {
   tag: string;
   category?: string;
   tags?: string[];
+  details?: {
+    level: string;
+    light: string;
+    space: string;
+    harvest: string;
+    cycles: string;
+    includes: string[];
+    steps: { title: string; text: string }[];
+    testimonial: { name: string; text: string };
+  };
   imageUrl: string;
   active: number;
   stock: number;

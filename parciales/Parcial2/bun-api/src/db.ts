@@ -10,7 +10,17 @@ export let db: Db;
 
 export type OrderStatus = "pending" | "paid" | "cancelled" | "refunded";
 export type PendingOrder = { checkoutSessionId: string; productId: string; buyerId: string; amountUsd: number; quantity: number };
-export type ProductInput = { name: string; description: string; priceUsd: number; tag: string; category?: string; tags?: string[]; imageUrl: string };
+export type ProductDetails = {
+  level: string;
+  light: string;
+  space: string;
+  harvest: string;
+  cycles: string;
+  includes: string[];
+  steps: { title: string; text: string }[];
+  testimonial: { name: string; text: string };
+};
+export type ProductInput = { name: string; description: string; priceUsd: number; tag: string; category?: string; tags?: string[]; imageUrl: string; details?: ProductDetails | null };
 export type ProductRecord = ProductInput & { id: string; active: number; stock: number; minimumStock: number; inventoryUpdatedAt: string | null; createdAt: string; updatedAt: string };
 export type AuditLogEntry = { id: string; timestamp: string; actor: string; action: string; resource: string; details: string };
 export type AdminUserRole = "support" | "admin";
@@ -220,7 +230,18 @@ export async function listProducts(options: { includeInactive?: boolean; categor
 export async function listTaxonomy() { await ready(); const rows = await products.find({ active: 1 }, { projection: { category: 1, tag: 1, tags: 1 } }).toArray(); return { categories: [...new Set(rows.map((row) => row.category).filter((item): item is string => Boolean(item)))].sort(), tags: [...new Set(rows.flatMap((row) => [row.tag, ...(row.tags ?? [])]).filter((item): item is string => Boolean(item)))].sort() }; }
 export async function getActiveProduct(productId: string) { await ready(); return hydrateProduct(await products.findOne({ id: productId, active: 1 })); }
 export async function createProduct(params: ProductInput) { await ready(); const now = new Date().toISOString(); const product = { ...params, id: makeProductId(params.name), active: 1, createdAt: now, updatedAt: now }; await products.insertOne(product); await createInventoryIfMissing(product.id); return hydrateProduct(product); }
-export async function updateProduct(productId: string, params: ProductInput) { await ready(); await products.updateOne({ id: productId }, { $set: { ...params, updatedAt: new Date().toISOString() } }); return hydrateProduct(await products.findOne({ id: productId })); }
+export async function updateProduct(productId: string, params: ProductInput) {
+  await ready();
+  const { details, ...fields } = params;
+  await products.updateOne(
+    { id: productId },
+    {
+      $set: { ...fields, ...(details ? { details } : {}), updatedAt: new Date().toISOString() },
+      ...(details === null ? { $unset: { details: "" } } : {}),
+    },
+  );
+  return hydrateProduct(await products.findOne({ id: productId }));
+}
 export async function deleteProduct(productId: string) { await ready(); return (await products.deleteOne({ id: productId })).deletedCount > 0; }
 
 export async function getCoupon(code: string) { await ready(); return coupons.findOne({ code: code.trim().toUpperCase() }, { projection: { _id: 0 } }); }

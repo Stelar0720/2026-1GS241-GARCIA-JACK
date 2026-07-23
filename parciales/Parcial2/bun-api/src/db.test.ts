@@ -44,6 +44,16 @@ describe("MongoDB repository", () => {
       priceUsd: 12.5,
       tag: "QA",
       imageUrl: "",
+      details: {
+        level: "Principiante",
+        light: "Luz indirecta",
+        space: "30×30 cm",
+        harvest: "10 días",
+        cycles: "3 ciclos",
+        includes: ["Semillas", "Maceta"],
+        steps: [{ title: "Sembrar", text: "Coloca las semillas." }],
+        testimonial: { name: "Cliente QA", text: "Funcionó muy bien." },
+      },
     });
 
     expect(created?.active).toBe(1);
@@ -55,8 +65,20 @@ describe("MongoDB repository", () => {
       priceUsd: 13.5,
       tag: "QA",
       imageUrl: "",
+      details: created!.details,
     });
     expect(updated?.name).toBe("Producto de prueba actualizado");
+    expect(updated?.details?.includes).toEqual(["Semillas", "Maceta"]);
+
+    const cleared = await repository.updateProduct(created!.id, {
+      name: "Producto de prueba actualizado",
+      description: "Registro aislado y temporal",
+      priceUsd: 13.5,
+      tag: "QA",
+      imageUrl: "",
+      details: null,
+    });
+    expect(cleared?.details).toBeUndefined();
 
     expect(await repository.deleteProduct(created!.id)).toBe(true);
     expect(await repository.getActiveProduct(created!.id)).toBeNull();

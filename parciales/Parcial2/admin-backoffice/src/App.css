@@ -454,7 +454,7 @@ body {
   border-radius: 16px;
   padding: 1.5rem;
   width: 100%;
-  max-width: 520px;
+  max-width: 780px;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
@@ -471,6 +471,20 @@ body {
 
 .form-group {
   margin-bottom: 1rem;
+}
+
+.product-content-fields {
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid #bbd6c3;
+  border-radius: 14px;
+  background: #f5fbf6;
+}
+
+.product-content-fields legend {
+  padding: 0 0.45rem;
+  color: #14532d;
+  font-weight: 800;
 }
 
 .form-group label {
