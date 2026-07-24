@@ -1,3 +1,4 @@
 # Los scripts de shell corren en runners Linux. Si se guardan con CRLF, bash
 # falla con "\r: command not found". Se fuerza LF sin importar el SO del autor.
 *.sh text eol=lf
+*.mp4 filter=lfs diff=lfs merge=lfs -text
